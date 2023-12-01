@@ -1,0 +1,25 @@
+{
+	"name": "asynjson",
+	"version": "0.1.0",
+	"type": "module",
+	"scripts": {
+		"test": "node asyncStringify.test.js",
+		"lint": "prettier --cache --check .",
+		"format": "prettier --cache --write ."
+	},
+	"dependencies": {},
+	"devDependencies": {
+		"prettier": "^3.1.0"
+	},
+	"main": "index.mjs",
+	"license": "MIT",
+	"repository": "https://github.com/vadzim/asyncjson",
+	"author": "v@vadzim.info",
+	"description": "huge data friendly & fast json stringifier",
+	"exports": {
+		".": {
+			"require": "./index.cjs",
+			"import": "./index.mjs"
+		}
+	}
+}

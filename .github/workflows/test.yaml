@@ -1,0 +1,32 @@
+name: Test
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.event.inputs.ref || github.ref }}
+
+      # setup-node works much slower them manual caching... may be it should be configured somehow properly, but let it be as it is
+      - name: Restore modules
+        uses: actions/cache@v3
+        with:
+          path: "./node_modules"
+          key: ${{ runner.os }}-modules-${{ hashFiles('./yarn.lock') }}
+
+      - run: yarn install --frozen-lockfile --production=false
+
+      - run: yarn lint
+
+      - run: yarn test
