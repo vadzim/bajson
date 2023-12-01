@@ -48,8 +48,8 @@ It supports promises and async and sync iterables.
 
 ```js
 async function createData() {
-	yield "text"
-	yield 777
+  yield "text"
+  yield 777
 }
 
 stringify(createData())
@@ -100,8 +100,8 @@ import { stringify } from "bajson"
 const app = express()
 
 app.get("/get-json", async (request, response) => {
-	response.setHeader("Content-Type", "application/json")
-	await pipeline(stringify(data), response)
+  response.setHeader("Content-Type", "application/json")
+  await pipeline(stringify(data), response)
 })
 ```
 
@@ -120,20 +120,20 @@ import { Publisher } from "@/models/publisher.model"
 const app = express()
 
 app.get("/give-me-it-all", async (request, response) => {
-	response.setHeader("Content-Type", "application/json")
-	await pipeline(
-		stringify({
-			books: Book.find().cursor(),
-			authors: Author.find().cursor(),
-			publishers: Publisher.find().cursor(),
-		}),
-		response,
-	)
-	// {
-	//   "books": [{ "name": "book1", ... }, { "name": "book2", ... }, ...],
-	//   "authors": [{ "name": "author1", ... }, { "name": "author2", ... }, ...],
-	//   "publishers": [{ "name": "publisher1", ... }, { "name": "publisher2", ... }, ...]
-	// }
+  response.setHeader("Content-Type", "application/json")
+  await pipeline(
+    stringify({
+      books: Book.find().cursor(),
+      authors: Author.find().cursor(),
+      publishers: Publisher.find().cursor(),
+    }),
+    response,
+  )
+  // {
+  //   "books": [{ "name": "book1", ... }, { "name": "book2", ... }, ...],
+  //   "authors": [{ "name": "author1", ... }, { "name": "author2", ... }, ...],
+  //   "publishers": [{ "name": "publisher1", ... }, { "name": "publisher2", ... }, ...]
+  // }
 })
 ```
 
@@ -156,8 +156,8 @@ There are scenarios where people need to store stringified JSON within a string 
 
 ```js
 const data = {
-	number: 42,
-	anotherData: JSON.stringify({ anotherNumber: 24 }),
+  number: 42,
+  anotherData: JSON.stringify({ anotherNumber: 24 }),
 }
 JSON.stringify(data)
 ```
@@ -166,8 +166,8 @@ With this module, it transforms into:
 
 ```js
 const data = {
-	number: 42,
-	anotherData: stringify({ anotherNumber: 24 }),
+  number: 42,
+  anotherData: stringify({ anotherNumber: 24 }),
 }
 stringify(data)
 ```
