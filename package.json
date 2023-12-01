@@ -17,6 +17,24 @@
 		"type": "git",
 		"url": "git+https://github.com/vadzim/asyncjson.git"
 	},
+	"keywords": [
+		"json",
+		"large",
+		"big",
+		"serialise",
+		"serialize",
+		"write",
+		"stringify",
+		"streamfy",
+		"stream",
+		"promise",
+		"async",
+		"asynchronous",
+		"iterable",
+		"iterator",
+		"generator",
+		"bfj"
+	],
 	"author": "v@vadzim.info",
 	"description": "huge data friendly & fast json stringifier",
 	"exports": {
