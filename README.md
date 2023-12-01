@@ -1,28 +1,29 @@
-# asyncjson
+# bajson
 
-Big-friendly JSON stringifying. Asynchronous streaming for handling large JSON datasets.
 Supports stringifying for promises, async generators and Node.js object streams.
+
+Big-friendly asynchronous JSON stringifying.
 
 - [Why would I want this?](#why-would-i-want-this)
 - [Is it fast?](#is-it-fast)
 - [What functions does it implement?](#what-functions-does-it-implement)
 - [What kind of async values does it support?](#what-kind-of-async-values-does-it-support)
-- [Is it compatible with `JSON.stringify`?](#is-it-compatible-with-json.stringify)
-- [How do I write a JSON file?](#how-do-i-write-a-json-file)
+- [Is it compatible with `JSON.stringify`?](#is-it-compatible-with-jsonstringify)
+- [How do I write a JSON file?](#how-do-i-write-bajson-file)
 - [How do I response with JSON by http?](#how-do-i-response-with-json-by-http)
 - [Can I lazily stringify data from MongoDB?](#can-i-lazily-stringify-data-from-mongodb)
-- [How do I create a JSON string?](#how-do-i-create-a-json-string)
-- [Why does `stringify` emit binary chunks instead of strings?](#why-does-stringify-emit-binary-chunks instead-of-strings)
+- [How do I create a JSON string?](#how-do-i-create-bajson-string)
+- [Why does `stringify` emit binary chunks instead of strings?](#why-does-stringify-emit-binary-chunks-instead-of-strings)
   <!-- * [Can it handle newline-delimited JSON (NDJSON)?](#can-it-handle-newline-delimited-json-ndjson) -->
   <!-- * [What versions of Node.js does it support?](#what-versions-of-nodejs-does-it-support) -->
 
 ## Why would I want this?
 
-If you need to stringify huge JavaScript datasets, it can monopolize the event loop, potentially leading to out-of-memory exceptions. `asyncjson` solves these issues.
+The main feature is that `stringify` resolves promises and stringify async iterables, including streams, into arrays on the fly. There's no need to collect their data in an array beforehand, and neither it does that.
 
-`stringify` can resolve promises and stringify async iterables, including streams, into arrays on the fly. There's no need to collect their data in an array beforehand, and neither it does that.
+`bajson` also does not monopolize the event loop and emits limited chunks so it doesn't lead to out-of-memory exceptions on large datasets.
 
-It's considerably faster than the other non-blocking package `bfj`, although `bfj` seems to be more efficient in memory usage. Pick the one that best suits your needs.
+It's considerably faster comparing to other non-blocking package `bfj`, although `bfj` seems to be more efficient in memory usage. Pick the one that best suits your needs.
 
 ## Is it fast?
 
@@ -36,7 +37,7 @@ It currently implements stringification, with parsing planned for the future.
 
 ```js
 import { pipeline } from "node:stream/promises"
-import { stringify } from "asyncjson"
+import { stringify } from "bajson"
 
 await pipeline(stringify(data), stream)
 ```
@@ -84,7 +85,7 @@ stringify([() => {}])
 ```js
 import { createWriteStream } from "node:fs"
 import { pipeline } from "node:stream/promises"
-import { stringify } from "asyncjson"
+import { stringify } from "bajson"
 
 await pipeline(stringify(data), createWriteStream(path))
 ```
@@ -94,7 +95,7 @@ await pipeline(stringify(data), createWriteStream(path))
 ```js
 import express from "express"
 import { pipeline } from "node:stream/promises"
-import { stringify } from "asyncjson"
+import { stringify } from "bajson"
 
 const app = express()
 
@@ -111,7 +112,7 @@ Sure.
 ```js
 import express from "express"
 import { pipeline } from "node:stream/promises"
-import { stringify } from "asyncjson"
+import { stringify } from "bajson"
 import { Book } from "@/models/book.model"
 import { Author } from "@/models/author.model"
 import { Publisher } from "@/models/publisher.model"
@@ -141,7 +142,7 @@ app.get("/give-me-it-all", async (request, response) => {
 I'm not sure you really want that, but
 
 ```js
-import { stringify } from "asyncjson"
+import { stringify } from "bajson"
 import fromAsync from "array-from-async"
 
 await new Blob(await fromAsync(stringify(data))).text()
