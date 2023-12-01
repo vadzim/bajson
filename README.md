@@ -9,10 +9,10 @@ Big-friendly asynchronous JSON stringifying.
 - [What functions does it implement?](#what-functions-does-it-implement)
 - [What kind of async values does it support?](#what-kind-of-async-values-does-it-support)
 - [Is it compatible with `JSON.stringify`?](#is-it-compatible-with-jsonstringify)
-- [How do I write a JSON file?](#how-do-i-write-bajson-file)
+- [How do I write a JSON file?](#how-do-i-write-a-json-file)
 - [How do I response with JSON by http?](#how-do-i-response-with-json-by-http)
 - [Can I lazily stringify data from MongoDB?](#can-i-lazily-stringify-data-from-mongodb)
-- [How do I create a JSON string?](#how-do-i-create-bajson-string)
+- [How do I create a JSON string?](#how-do-i-create-a-json-string)
 - [Why does `stringify` emit binary chunks instead of strings?](#why-does-stringify-emit-binary-chunks-instead-of-strings)
   <!-- * [Can it handle newline-delimited JSON (NDJSON)?](#can-it-handle-newline-delimited-json-ndjson) -->
   <!-- * [What versions of Node.js does it support?](#what-versions-of-nodejs-does-it-support) -->
