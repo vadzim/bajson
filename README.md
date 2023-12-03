@@ -2,7 +2,7 @@
 
 Supports stringifying for promises, async generators and Node.js object streams.
 
-Big-friendly asynchronous JSON stringifying.
+Big-friendly asynchronous JSON stringifying. Does not block event loop.
 
 - [Why would I want this?](#why-would-i-want-this)
 - [Is it fast?](#is-it-fast)
