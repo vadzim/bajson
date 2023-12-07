@@ -50,10 +50,10 @@ export async function* stringify(
 				}
 				rec.indentNeeded = false
 			}
-			if (rec.key !== undefined) {
+			if (rec.key != null) {
 				pushChunk(JSON.stringify(rec.key))
 				pushChunk(typeof indent === "string" ? ": " : ":")
-				rec.key = undefined
+				rec.key = null
 			}
 			rec.dataPushed = true
 		}
@@ -103,14 +103,14 @@ export async function* stringify(
 			commaNeeded: false,
 			indentNeeded: false,
 			dataPushed: false,
-			key: undefined,
+			key: null,
 			indentIndex: stack.length,
 		}
 	}
 
 	try {
 		const processObjectEntry = entry => {
-			head.commaNeeded ||= head.index > 0 && head.key === undefined
+			head.commaNeeded ||= head.index > 0 && head.key == null
 			head.key = entry[0]
 			current = typeof head.key === "symbol" ? undefined : getValue(head.key, entry[1])
 			head.index++
