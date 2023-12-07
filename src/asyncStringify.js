@@ -282,23 +282,10 @@ export async function* stringify(
 		} while (head)
 	} catch (error) {
 		while (head || stack.length > 0) {
-			switch (head?.type) {
-				case ITERATOR: {
-					try {
-						head.items?.return()
-					} catch {
-						//
-					}
-					break
-				}
-				case ASYNC: {
-					try {
-						await head.items?.return()
-					} catch {
-						//
-					}
-					break
-				}
+			try {
+				await head?.items?.return?.()
+			} catch {
+				//
 			}
 			head = stack.pop()
 		}
