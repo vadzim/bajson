@@ -2,8 +2,8 @@ const ENTRIES = 0
 const VALUES = 1
 const ITERATOR = 2
 const ASYNC = 3
-const ASYNC_ARRAY = 4
-const ASYNC_ENTRIES = 5
+const ASYNC_ENTRIES = 4
+const ASYNC_STRING = 5
 
 // type StackItem = {
 // 	type: number
@@ -219,39 +219,49 @@ export async function* stringify(
 						close = "}"
 						break
 					}
+					case ASYNC_STRING: {
+						const prevHead = stack[stack.length - 1]
+						const decoder = new TextDecoder()
+						const firstChunk = JSON.stringify(decoder.decode(current.value, { stream: true })) //
+							.slice(0, -1)
+						pushData(prevHead, firstChunk) && (yield getBuffer(), await pause)
+						for (; (current = await head.items.next()), !current.done; ) {
+							if (!(current.value instanceof Uint8Array)) {
+								throw new TypeError("The whole stream should be binary")
+							}
+							const chunk = JSON.stringify(decoder.decode(current.value, { stream: true })).slice(1, -1)
+							pushData(prevHead, chunk) && (yield getBuffer(), await pause)
+						}
+						// Pop head only after the items is completely consumed.
+						// head.items are disposed in the finally block in case of some exceptions.
+						head = stack.pop()
+						const lastChunk = JSON.stringify(decoder.decode()).slice(1)
+						pushData(head, lastChunk) && (yield getBuffer(), await pause)
+						continue
+					}
 					case ASYNC: {
 						const result = await head.items.next()
 
 						if (head.index === 0) {
-							const prevHead = stack[stack.length - 1]
 							if (!result.done) {
 								if (result.value instanceof Uint8Array) {
-									const decoder = new TextDecoder()
-									const firstChunk = JSON.stringify(decoder.decode(result.value, { stream: true })) //
-										.slice(0, -1)
-									pushData(prevHead, firstChunk) && (yield getBuffer(), await pause)
-									for (let item; (item = await head.items.next()), !item.done; ) {
-										if (!(item.value instanceof Uint8Array)) {
-											throw new TypeError("The whole stream should be binary")
-										}
-										const chunk = JSON.stringify(decoder.decode(item.value, { stream: true })).slice(1, -1)
-										pushData(prevHead, chunk) && (yield getBuffer(), await pause)
-									}
-									head = stack.pop()
-									const lastChunk = JSON.stringify(decoder.decode()).slice(1)
-									pushData(head, lastChunk) && (yield getBuffer(), await pause)
+									current = result
+									head.type = ASYNC_STRING
 									continue
-								} else if (
+								}
+								if (
 									Array.isArray(result.value) &&
 									result.value.length === 2 &&
 									typeof result.value[0] === "symbol"
 								) {
+									const prevHead = stack[stack.length - 1]
 									pushData(prevHead, "{") && (yield getBuffer(), await pause)
 									head.type = ASYNC_ENTRIES
 									processObjectEntry(result.value)
 									break loop
 								}
 							}
+							const prevHead = stack[stack.length - 1]
 							pushData(prevHead, "[") && (yield getBuffer(), await pause)
 						}
 
