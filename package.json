@@ -1,6 +1,6 @@
 {
 	"name": "bajson",
-	"version": "0.1.6",
+	"version": "0.1.7",
 	"description": "huge data friendly & fast json stringifier",
 	"type": "module",
 	"types": "./src/asyncStringify.d.ts",
