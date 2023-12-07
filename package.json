@@ -12,7 +12,7 @@
 	"devDependencies": {
 		"prettier": "^3.1.0"
 	},
-	"main": "index.mjs",
+	"main": "index.js",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
@@ -41,7 +41,7 @@
 	"exports": {
 		".": {
 			"require": "./index.cjs",
-			"import": "./index.mjs"
+			"import": "./index.js"
 		}
 	}
 }

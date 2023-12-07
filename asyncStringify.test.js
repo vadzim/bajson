@@ -1,4 +1,4 @@
-import { stringify, asAsyncObject } from "./index.mjs"
+import { stringify, asAsyncObject } from "./index.js"
 import * as fs from "node:fs"
 import { pipeline } from "node:stream/promises"
 import assert from "node:assert/strict"
