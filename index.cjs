@@ -1,4 +1,4 @@
-const asyncStringifyImport = import("./asyncStringify.js")
+const asyncStringifyImport = import("./src/asyncStringify.js")
 
 module.exports = {
 	async *stringify(...args) {

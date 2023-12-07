@@ -1,1 +1,1 @@
-export * from "./asyncStringify.js"
+export * from "./src/asyncStringify.js"

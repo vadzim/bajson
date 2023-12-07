@@ -1,4 +1,9 @@
-import { stringify, asAsyncObject } from "./index.js"
+// test import
+import "../index.cjs"
+import "../index.js"
+
+// main test
+import { stringify, asAsyncObject } from "../index.js"
 import * as fs from "node:fs"
 import { pipeline } from "node:stream/promises"
 import assert from "node:assert/strict"

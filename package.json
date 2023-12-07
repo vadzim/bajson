@@ -1,13 +1,20 @@
 {
 	"name": "bajson",
 	"version": "0.1.5",
+	"description": "huge data friendly & fast json stringifier",
 	"type": "module",
-	"types": "./asyncStringify.d.ts",
+	"types": "./src/asyncStringify.d.ts",
 	"scripts": {
-		"test": "node asyncStringify.test.js",
+		"test": "node ./test/asyncStringify.test.js",
 		"lint": "prettier --cache --check .",
-		"format": "prettier --cache --write ."
+		"format": "prettier --cache --write .",
+		"preversion": "npm run lint && npm run test && rm -rf /tmp/bajson_build && mkdir -p /tmp/bajson_build && npm pack --pack-destination /tmp/bajson_build && cd /tmp/bajson_build && tar -zxvf bajson* && node -e 'import(`./package/index.js`)' && node -e 'import(`./package/index.cjs`);'",
+		"postversion": "rm -rf /tmp/bajson_build"
 	},
+	"files": [
+		"index.*",
+		"src"
+	],
 	"dependencies": {},
 	"devDependencies": {
 		"prettier": "^3.1.0"
@@ -36,12 +43,5 @@
 		"generator",
 		"bfj"
 	],
-	"author": "v@vadzim.info",
-	"description": "huge data friendly & fast json stringifier",
-	"exports": {
-		".": {
-			"require": "./index.cjs",
-			"import": "./index.js"
-		}
-	}
+	"author": "v@vadzim.info"
 }
