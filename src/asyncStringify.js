@@ -8,7 +8,7 @@ const ASYNC_STRING = 5
 // type StackItem = {
 // 	type: number
 // 	items?: Iterator<unknown> | AsyncIterator<unknown> | [key: string, value: unknown][] | unknown[]
-// 	index?: number
+// 	currentCount?: number
 // 	commaNeeded?: boolean
 // 	indentNeeded?: boolean
 // 	key?: string
@@ -97,7 +97,7 @@ export async function* stringify(
 		head = {
 			type,
 			items,
-			index: 0,
+			currentCount: 0,
 			commaNeeded: false,
 			indentNeeded: false,
 			key: null,
@@ -107,18 +107,18 @@ export async function* stringify(
 
 	try {
 		const processObjectEntry = entry => {
-			head.commaNeeded ||= head.index > 0 && head.key == null
+			head.commaNeeded ||= head.currentCount > 0 && head.key == null
+			head.indentNeeded = true
 			head.key = entry[0]
 			current = typeof head.key === "symbol" ? undefined : getValue(head.key, entry[1])
-			head.index++
-			head.indentNeeded = true
+			head.currentCount++
 		}
 
 		const processArrayItem = item => {
-			head.commaNeeded = head.index > 0
-			current = getValue(head.index, item)
-			head.index++
+			head.commaNeeded = head.currentCount > 0
 			head.indentNeeded = true
+			current = getValue(head.currentCount, item)
+			head.currentCount++
 		}
 
 		let current = getValue("", data)
@@ -176,16 +176,16 @@ export async function* stringify(
 				let close
 				switch (head.type) {
 					case ENTRIES: {
-						if (head.index < head.items.length) {
-							processObjectEntry(head.items[head.index])
+						if (head.currentCount < head.items.length) {
+							processObjectEntry(head.items[head.currentCount])
 							break loop
 						}
 						close = "}"
 						break
 					}
 					case VALUES: {
-						if (head.index < head.items.length) {
-							processArrayItem(head.items[head.index])
+						if (head.currentCount < head.items.length) {
+							processArrayItem(head.items[head.currentCount])
 							break loop
 						}
 						close = "]"
@@ -239,7 +239,7 @@ export async function* stringify(
 					case ASYNC: {
 						const result = await head.items.next()
 
-						if (head.index === 0) {
+						if (head.currentCount === 0) {
 							if (!result.done) {
 								if (result.value instanceof Uint8Array) {
 									current = result
