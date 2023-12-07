@@ -11,7 +11,6 @@ const ASYNC_STRING = 5
 // 	index?: number
 // 	commaNeeded?: boolean
 // 	indentNeeded?: boolean
-// 	dataPushed?: boolean
 // 	key?: string
 // }
 
@@ -55,13 +54,12 @@ export async function* stringify(
 				pushChunk(typeof indent === "string" ? ": " : ":")
 				rec.key = null
 			}
-			rec.dataPushed = true
 		}
 		return pushChunk(chunk)
 	}
 
 	const pushClose = (rec /*: StackItem | null*/, chunk /*: string*/) => {
-		if (rec.dataPushed) {
+		if (rec.currentCount > 0) {
 			if (typeof indent === "string") {
 				pushChunk(rec.indentIndex ? indents[rec.indentIndex - 1] : "\n")
 			}
@@ -102,7 +100,6 @@ export async function* stringify(
 			index: 0,
 			commaNeeded: false,
 			indentNeeded: false,
-			dataPushed: false,
 			key: null,
 			indentIndex: stack.length,
 		}
