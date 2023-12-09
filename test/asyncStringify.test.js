@@ -42,6 +42,7 @@ const getText = async (...args) => {
 	let text = ""
 	for await (const chunk of stringify(...[...args, undefined, undefined].slice(0, 3), {
 		chunkSize: 10000,
+		...args[3],
 	})) {
 		text += decoder.decode(chunk, { stream: true })
 	}
@@ -49,13 +50,31 @@ const getText = async (...args) => {
 	return text
 }
 
+const fixText = text => new TextDecoder().decode(new TextEncoder().encode(text))
+
 const check = async (data, converter = undefined, indent = undefined) => {
 	const plainData = await toPlain(data())
-	const jsonStringifyResult = new TextDecoder().decode(
-		new TextEncoder().encode(JSON.stringify(plainData, converter, indent)),
-	)
-	const getTextResult = await getText(data(), converter, indent)
-	assert.equal(getTextResult, jsonStringifyResult)
+
+	let ndjson
+	try {
+		for (ndjson of [false, true]) {
+			const jsonStringifyResult = fixText(
+				!ndjson
+					? JSON.stringify(plainData, converter, indent)
+					: (Array.isArray(plainData) ? plainData : [plainData])
+							.map(x => (JSON.stringify(x, converter, indent) ?? "null") + "\n")
+							.join(""),
+			)
+			const getTextResult = await getText(data(), converter, indent, { ndjson })
+			assert.equal(getTextResult, jsonStringifyResult)
+		}
+	} catch (e) {
+		console.log("*** data =", plainData)
+		console.log("*** converter =", converter)
+		console.log("*** indent =", JSON.stringify([indent]))
+		console.log("*** ndjson =", ndjson)
+		throw e
+	}
 }
 
 const date = new Date()

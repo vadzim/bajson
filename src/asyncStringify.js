@@ -18,7 +18,7 @@ export async function* stringify(
 	data /*: unknown*/,
 	replacer /*?: (key: string, value: unknown) => unknown*/,
 	indent /*?: unknown*/,
-	{ chunkSize = 10000 } /*: { chunkSize?: number }*/ = {},
+	{ chunkSize = 10000, ndjson = false } /*: { chunkSize?: number, ndjson?: boolean }*/ = {},
 ) {
 	const encoder = new TextEncoder()
 	let head /*: StackItem | null*/ = null
@@ -31,6 +31,9 @@ export async function* stringify(
 
 	if (typeof replacer !== "function") replacer = undefined
 
+	const getIndent = (indentIndex /*: number*/) =>
+		indentIndex < 0 ? "\n" : (indents[indentIndex] ??= getIndent(indentIndex - 1) + indent)
+
 	const pushChunk = (chunk /*: string*/) => {
 		buffer += chunk
 		return buffer.length >= chunkSize
@@ -38,14 +41,17 @@ export async function* stringify(
 
 	const pushData = (rec /*: StackItem | null*/, chunk /*: string*/) => {
 		if (rec) {
+			if (rec.nlNeeded) {
+				pushChunk("\n")
+				rec.nlNeeded = false
+			}
 			if (rec.commaNeeded) {
 				pushChunk(",")
 				rec.commaNeeded = false
 			}
 			if (rec.indentNeeded) {
 				if (typeof indent === "string") {
-					indents[rec.indentIndex] ||= (indents[rec.indentIndex - 1] ?? "\n") + indent
-					pushChunk(indents[rec.indentIndex])
+					pushChunk(getIndent(rec.indentIndex))
 				}
 				rec.indentNeeded = false
 			}
@@ -58,10 +64,19 @@ export async function* stringify(
 		return pushChunk(chunk)
 	}
 
+	const pushArrayStart = () => {
+		const prevHead = stack[stack.length - 1]
+		if (prevHead || !ndjson) {
+			return pushData(prevHead, "[")
+		} else {
+			head.indentIndex = -1
+		}
+	}
+
 	const pushClose = (rec /*: StackItem | null*/, chunk /*: string*/) => {
 		if (rec.currentCount > 0) {
 			if (typeof indent === "string") {
-				pushChunk(rec.indentIndex ? indents[rec.indentIndex - 1] : "\n")
+				pushChunk(getIndent(rec.indentIndex - 1))
 			}
 		}
 		return pushChunk(chunk)
@@ -93,20 +108,25 @@ export async function* stringify(
 	}
 
 	const newHead = (type /*: number*/, items /*: unknown*/) => {
+		const prevHead = head
 		if (head) stack.push(head)
 		head = {
 			type,
 			items,
 			currentCount: 0,
+			nlNeeded: false,
 			commaNeeded: false,
 			indentNeeded: false,
 			key: null,
-			indentIndex: stack.length,
+			indentIndex: (prevHead ? prevHead.indentIndex : -1) + 1,
 		}
 	}
 
+	const processCloseArray = () => (!ndjson || stack.length > 0 ? "]" : "")
+
 	try {
 		const processObjectEntry = entry => {
+			head.nlNeeded = false
 			head.commaNeeded ||= head.currentCount > 0 && head.key == null
 			head.indentNeeded = true
 			head.key = entry[0]
@@ -115,8 +135,15 @@ export async function* stringify(
 		}
 
 		const processArrayItem = item => {
-			head.commaNeeded = head.currentCount > 0
-			head.indentNeeded = true
+			if (ndjson && stack.length === 0) {
+				head.nlNeeded = head.currentCount > 0
+				head.commaNeeded = false
+				head.indentNeeded = false
+			} else {
+				head.nlNeeded = false
+				head.commaNeeded = head.currentCount > 0
+				head.indentNeeded = true
+			}
 			current = getValue(head.currentCount, item)
 			head.currentCount++
 		}
@@ -140,14 +167,14 @@ export async function* stringify(
 							break
 						}
 						if (Array.isArray(current)) {
-							pushData(head, "[") && (yield getBuffer(), await pause)
 							newHead(VALUES, current)
+							pushArrayStart() && (yield getBuffer(), await pause)
 							break
 						}
 						const iterator = current[Symbol.iterator]
 						if (typeof iterator === "function") {
-							pushData(head, "[") && (yield getBuffer(), await pause)
 							newHead(ITERATOR, iterator.call(current))
+							pushArrayStart() && (yield getBuffer(), await pause)
 							break
 						}
 						const asyncIterator = current[Symbol.asyncIterator]
@@ -188,7 +215,7 @@ export async function* stringify(
 							processArrayItem(head.items[head.currentCount])
 							break loop
 						}
-						close = "]"
+						close = processCloseArray()
 						break
 					}
 					case ITERATOR: {
@@ -197,7 +224,7 @@ export async function* stringify(
 							processArrayItem(result.value)
 							break loop
 						}
-						close = "]"
+						close = processCloseArray()
 						break
 					}
 					case ASYNC_ENTRIES: {
@@ -258,22 +285,21 @@ export async function* stringify(
 									break loop
 								}
 							}
-							const prevHead = stack[stack.length - 1]
-							pushData(prevHead, "[") && (yield getBuffer(), await pause)
+							pushArrayStart() && (yield getBuffer(), await pause)
 						}
 
 						if (!result.done) {
 							processArrayItem(result.value)
 							break loop
 						}
-						close = "]"
+						close = processCloseArray()
 						break
 					}
 					default: {
 						throw new Error(`unreachable, ${head.type}`)
 					}
 				}
-				pushClose(head, close) && (yield getBuffer(), await pause)
+				close && pushClose(head, close) && (yield getBuffer(), await pause)
 				head = stack.pop()
 			}
 		} while (head)
@@ -288,6 +314,7 @@ export async function* stringify(
 		}
 		throw error
 	}
+	if (ndjson && (bufferYielded || buffer)) pushData(undefined, "\n")
 	if (!bufferYielded || buffer) yield getBuffer()
 }
 
