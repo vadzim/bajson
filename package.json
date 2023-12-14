@@ -5,7 +5,7 @@
 	"type": "module",
 	"types": "./src/asyncStringify.d.ts",
 	"scripts": {
-		"test": "node ./test/asyncStringify.test.js",
+		"test": "node --test",
 		"lint": "prettier --cache --check .",
 		"format": "prettier --cache --write .",
 		"preversion": "make preversion",

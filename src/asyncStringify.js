@@ -17,9 +17,14 @@ const ASYNC_STRING = 5
 export async function* stringify(
 	data /*: unknown*/,
 	replacer /*?: (key: string, value: unknown) => unknown*/,
-	indent /*?: unknown*/,
-	{ chunkSize = 10000, ndjson = false } /*: { chunkSize?: number, ndjson?: boolean }*/ = {},
+	options /*?: ;number | string | { indent: number | string, chunkSize: number, ndjson: boolean }*/,
 ) {
+	const {
+		chunkSize = 10000,
+		ndjson = false,
+		indent = undefined,
+	} = typeof options === "object" ? options ?? {} : { indent: options }
+
 	const encoder = new TextEncoder()
 	let head /*: StackItem | null*/ = null
 	let buffer = ""
@@ -27,12 +32,12 @@ export async function* stringify(
 	const stack /*: StackItem[]*/ = []
 	const indents /*: string[]*/ = []
 
-	indent = parseIndent(indent)
+	const parsedIndent = parseIndent(indent)
 
 	if (typeof replacer !== "function") replacer = undefined
 
 	const getIndent = (indentIndex /*: number*/) =>
-		indentIndex < 0 ? "\n" : (indents[indentIndex] ??= getIndent(indentIndex - 1) + indent)
+		indentIndex < 0 ? "\n" : (indents[indentIndex] ??= getIndent(indentIndex - 1) + parsedIndent)
 
 	const pushChunk = (chunk /*: string*/) => {
 		buffer += chunk
@@ -50,14 +55,14 @@ export async function* stringify(
 				rec.commaNeeded = false
 			}
 			if (rec.indentNeeded) {
-				if (typeof indent === "string") {
+				if (typeof parsedIndent === "string") {
 					pushChunk(getIndent(rec.indentIndex))
 				}
 				rec.indentNeeded = false
 			}
 			if (rec.key != null) {
 				pushChunk(JSON.stringify(rec.key))
-				pushChunk(typeof indent === "string" ? ": " : ":")
+				pushChunk(typeof parsedIndent === "string" ? ": " : ":")
 				rec.key = null
 			}
 		}
@@ -75,7 +80,7 @@ export async function* stringify(
 
 	const pushClose = (rec /*: StackItem | null*/, chunk /*: string*/) => {
 		if (rec.currentCount > 0) {
-			if (typeof indent === "string") {
+			if (typeof parsedIndent === "string") {
 				pushChunk(getIndent(rec.indentIndex - 1))
 			}
 		}

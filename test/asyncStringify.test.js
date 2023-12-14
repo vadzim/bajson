@@ -7,6 +7,15 @@ import { stringify, asAsyncObject } from "../index.js"
 import * as fs from "node:fs"
 import { pipeline } from "node:stream/promises"
 import assert from "node:assert/strict"
+import { test, describe } from "node:test"
+import { inspect } from "node:util"
+
+const inspectOptions = {
+	compact: true,
+	breakLength: Infinity,
+	colors: true,
+	depth: Infinity,
+}
 
 const toArray = async asyncIterable => {
 	const ret = []
@@ -23,8 +32,12 @@ const toPlain = async data => {
 		} else if (typeof data[Symbol.asyncIterator] === "function") {
 			const array = await Promise.all((await toArray(data)).map(toPlain))
 			if (array[0] instanceof Uint8Array) return await new Blob(array).text()
-			if (Array.isArray(array[0]) && array[0].length === 2 && typeof array[0][0] === "symbol")
+			if (Array.isArray(array[0]) && array[0].length === 2 && typeof array[0][0] === "symbol") {
+				if (String(array[0][0]) === "Symbol(asyncObjectMark)" && array[0][1] === undefined) {
+					return Object.fromEntries(array.slice(1))
+				}
 				return Object.fromEntries(array)
+			}
 			return array
 		} else if (Object.getPrototypeOf(data) === Object.getPrototypeOf({})) {
 			return Object.fromEntries(
@@ -37,13 +50,10 @@ const toPlain = async data => {
 	return data
 }
 
-const getText = async (...args) => {
+const getText = async (data, replacer, options) => {
 	const decoder = new TextDecoder()
 	let text = ""
-	for await (const chunk of stringify(...[...args, undefined, undefined].slice(0, 3), {
-		chunkSize: 10000,
-		...args[3],
-	})) {
+	for await (const chunk of stringify(data, replacer, options)) {
 		text += decoder.decode(chunk, { stream: true })
 	}
 	text += decoder.decode()
@@ -52,159 +62,163 @@ const getText = async (...args) => {
 
 const fixText = text => new TextDecoder().decode(new TextEncoder().encode(text))
 
-const check = async (data, converter = undefined, indent = undefined) => {
-	const plainData = await toPlain(data())
-
-	let ndjson
-	try {
-		for (ndjson of [false, true]) {
-			const jsonStringifyResult = fixText(
-				!ndjson
-					? JSON.stringify(plainData, converter, indent)
-					: (Array.isArray(plainData) ? plainData : [plainData])
-							.map(x => (JSON.stringify(x, converter, indent) ?? "null") + "\n")
-							.join(""),
-			)
-			const getTextResult = await getText(data(), converter, indent, { ndjson })
-			assert.equal(getTextResult, jsonStringifyResult)
-		}
-	} catch (e) {
-		console.log("*** data =", plainData)
-		console.log("*** converter =", converter)
-		console.log("*** indent =", JSON.stringify([indent]))
-		console.log("*** ndjson =", ndjson)
-		throw e
-	}
-}
-
 const date = new Date()
 
-for (const d of [
-	() => true,
-	() => false,
-	() => null,
-	() => "",
-	() => [],
-	() => ({}),
-	() => "abc",
-	() => "ab\n\t❤️😱c",
-	() => 1234,
-	() => date,
-	() => ({ "": 12, "***": 23, 34: 45 }),
-	() => ({ a: 123, b: null, c: "str", d: [], e: {}, f: [345], g: { h: 567 } }),
-	() => ({
-		x: {
+await describe("main", async () => {
+	for (const data of [
+		() => true,
+		() => false,
+		() => null,
+		() => "",
+		() => [],
+		() => ({}),
+		() => "abc",
+		() => "ab\n\t❤️😱c",
+		() => 1234,
+		() => date,
+		() => ({ "": 12, "***": 23, 34: 45 }),
+		() => ({ a: 123, b: null, c: "str", d: [], e: {}, f: [345], g: { h: 567 } }),
+		() => ({
 			x: {
 				x: {
-					x: { x: { x: { x: { x: { x: { x: { x: { x: { x: { x: { x: { x: { x: {} } } } } } } } } } } } } },
+					x: {
+						x: { x: { x: { x: { x: { x: { x: { x: { x: { x: { x: { x: { x: { x: {} } } } } } } } } } } } } },
+					},
 				},
 			},
-		},
-	}),
-	() => ({ [Symbol()]: 123, b: 321 }),
-	() => ((x = { a: 1, toJSON: () => ({ ...x }) }) => x)(),
-	() => ((x = Promise.resolve({ a: 1, toJSON: () => ({ ...x }) })) => x)(),
-	() => ((x = { a: 1, toJSON: () => Promise.resolve({ ...x }) }) => x)(),
-	...[
-		() => [
-			Promise.resolve(33),
-			(function* () {
-				yield { x: 44 }
-				yield Promise.resolve(55)
-				yield 77
-			})(),
-			(async function* () {
-				yield Promise.resolve(88)
-				yield [99]
-			})(),
-			stringify({
-				a: 42,
-				b: 55,
-				c: [89, 34, [{}]],
-			}),
-			asAsyncObject(
-				(async function* () {
-					yield* [
-						["aa", 42],
-						["bb", 55],
-						["cc", [89, 34, [{}]]],
-					]
+		}),
+		() => ({ [Symbol()]: 123, b: 321 }),
+		() => ((x = { a: 1, toJSON: () => ({ ...x }) }) => x)(),
+		() => ((x = Promise.resolve({ a: 1, toJSON: () => ({ ...x }) })) => x)(),
+		() => ((x = { a: 1, toJSON: () => Promise.resolve({ ...x }) }) => x)(),
+		...[
+			() => [
+				Promise.resolve(33),
+				(function* () {
+					yield { x: 44 }
+					yield Promise.resolve(55)
+					yield 77
 				})(),
-			),
-		],
-		() => [[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]],
-		() => [undefined, () => {}, null, Symbol(), date],
-		() => [
-			undefined,
-			undefined,
-			undefined,
-			42,
-			undefined,
-			undefined,
-			undefined,
-			42,
-			undefined,
-			undefined,
-			undefined,
-		],
-		() => [undefined, 42, undefined, 42, undefined],
-		() => [undefined, undefined, undefined, undefined, undefined, 42, undefined, undefined],
-		() => [, , , , , 42],
-		() => [, , , , , 42, , , ,],
-		() => [date, date, date, date],
-	].flatMap(a => [
-		() => a(),
-		() => Object.fromEntries(Object.entries(a())),
-		() => Object.fromEntries(Object.entries(a()).map(([k, v]) => [3 - k, v])),
-		() => Object.fromEntries(Object.entries(a()).map(([k, v]) => ["x" + k, v])),
-		() => Object.fromEntries(Object.entries(a()).map(([k, v]) => ["x" + (3 - k), v])),
-	]),
-]) {
-	for (const indent of [
-		"",
-		undefined,
-		null,
-		false,
-		true,
-		Symbol.iterator,
-		() => {},
-		{},
-		[],
-		"\x20",
-		"\x20\x20",
-		"\x20\x20\x20",
-		"".padEnd(15, "\x20"),
-		"\t",
-		"\t\t",
-		"\t\t\t",
-		"".padEnd(15, "\t"),
-		"w",
-		"ww",
-		"www",
-		"".padEnd(15, "w"),
-		"x".padEnd(16, "😱"),
-		0,
-		-0,
-		1,
-		3,
-		-1,
-		Infinity,
-		11,
-		88,
-		3.1416,
-		2.71,
-		0.1,
-		0.001,
-		-3.1416,
-		-2.71,
-		-0.1,
-		-0.001,
+				(async function* () {
+					yield Promise.resolve(88)
+					yield [99]
+				})(),
+				stringify({
+					a: 42,
+					b: 55,
+					c: [89, 34, [{}]],
+				}),
+				asAsyncObject(
+					(async function* () {
+						yield* [
+							["aa", 42],
+							["bb", 55],
+							["cc", [89, 34, [{}]]],
+						]
+					})(),
+				),
+			],
+			() => [[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]],
+			() => [undefined, () => {}, null, Symbol(), date],
+			() => [
+				undefined,
+				undefined,
+				undefined,
+				42,
+				undefined,
+				undefined,
+				undefined,
+				42,
+				undefined,
+				undefined,
+				undefined,
+			],
+			() => [undefined, 42, undefined, 42, undefined],
+			() => [undefined, undefined, undefined, undefined, undefined, 42, undefined, undefined],
+			() => [, , , , , 42],
+			() => [, , , , , 42, , , ,],
+			() => [date, date, date, date],
+		].flatMap(a => [
+			() => a(),
+			() => Object.fromEntries(Object.entries(a())),
+			() => Object.fromEntries(Object.entries(a()).map(([k, v]) => [3 - k, v])),
+			() => Object.fromEntries(Object.entries(a()).map(([k, v]) => ["x" + k, v])),
+			() => Object.fromEntries(Object.entries(a()).map(([k, v]) => ["x" + (3 - k), v])),
+		]),
 	]) {
-		await check(d, undefined, indent)
+		const plainData = await toPlain(data())
+
+		await test(`with data = ${inspect(plainData, inspectOptions)}`, async () => {
+			const check = async (replacer = undefined, indent = undefined) => {
+				await test("without ndjson", async () => {
+					const getTextResult = await getText(data(), replacer, indent)
+					const jsonStringifyResult = fixText(JSON.stringify(plainData, replacer, indent))
+					assert.equal(getTextResult, jsonStringifyResult)
+				})
+				await test("with ndjson", async () => {
+					const getTextResult = await getText(data(), replacer, { indent, ndjson: true })
+					const jsonStringifyResult = fixText(
+						(Array.isArray(plainData) ? plainData : [plainData])
+							.map(x => (JSON.stringify(x, replacer, indent) ?? "null") + "\n")
+							.join(""),
+					)
+					assert.equal(getTextResult, jsonStringifyResult)
+				})
+			}
+
+			for (const indent of [
+				"",
+				undefined,
+				null,
+				false,
+				true,
+				Symbol.iterator,
+				() => {},
+				{},
+				[],
+				"\x20",
+				"\x20\x20",
+				"\x20\x20\x20",
+				"".padEnd(15, "\x20"),
+				"\t",
+				"\t\t",
+				"\t\t\t",
+				"".padEnd(15, "\t"),
+				"w",
+				"ww",
+				"www",
+				"".padEnd(15, "w"),
+				"x".padEnd(16, "😱"),
+				0,
+				-0,
+				1,
+				3,
+				-1,
+				Infinity,
+				11,
+				88,
+				3.1416,
+				2.71,
+				0.1,
+				0.001,
+				-3.1416,
+				-2.71,
+				-0.1,
+				-0.001,
+			]) {
+				await test(`with indent = ${inspect(indent, inspectOptions)}`, async () => {
+					await check(undefined, indent)
+				})
+			}
+			await test("with a replacer", async () => {
+				await check((k, x) => (typeof x === "object" ? x : String(x)))
+			})
+			await test("with a wrong replacer", async () => {
+				await check("string")
+			})
+		})
 	}
-	await check(d, (k, x) => (typeof x === "object" ? x : String(x)))
-	await check(d, "string") // test call with wrong converter
-}
+})
 
 // import bfj from "bfj"
 // let json = JSON.parse(String(fs.readFileSync("./1.json")))
