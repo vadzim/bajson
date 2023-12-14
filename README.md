@@ -1,8 +1,8 @@
-# bajson
+# Bourne again JSON
 
-Supports stringifying for promises, async generators and Node.js object streams.
+Supports stringifying for async generators, Node.js object streams and promises.
 
-Big-friendly asynchronous JSON stringifying. Does not block event loop.
+Big-friendly asynchronous JSON stringifying. Doesn't block the event loop.
 
 - [Why would I want this?](#why-would-i-want-this)
 - [Is it fast?](#is-it-fast)
