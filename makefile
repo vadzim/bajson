@@ -1,11 +1,17 @@
 .PHONY: preversion
 
+BUILD_DIR=/tmp/bajson_build
+
 preversion:
 	npm run lint
 	npm run test
-	rm -rf /tmp/bajson_build
-	mkdir -p /tmp/bajson_build
-	npm pack --pack-destination /tmp/bajson_build
-	tar -zxvf /tmp/bajson_build/bajson* -C /tmp/bajson_build/
-	node -e 'import(`/tmp/bajson_build/package/index.js`)'
-	node -e 'import(`/tmp/bajson_build/package/index.cjs`)'
+
+	rm -rf ${BUILD_DIR}
+	mkdir -p ${BUILD_DIR}
+
+	npm pack --pack-destination ${BUILD_DIR}
+
+	tar -zxvf ${BUILD_DIR}/bajson* -C ${BUILD_DIR}
+
+	node -e "import('${BUILD_DIR}/package/index.js')"
+	node -e "import('${BUILD_DIR}/package/index.cjs')"
