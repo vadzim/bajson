@@ -8,7 +8,7 @@
 		"test": "node ./test/asyncStringify.test.js",
 		"lint": "prettier --cache --check .",
 		"format": "prettier --cache --write .",
-		"preversion": "npm run lint && npm run test && rm -rf /tmp/bajson_build && mkdir -p /tmp/bajson_build && npm pack --pack-destination /tmp/bajson_build && cd /tmp/bajson_build && tar -zxvf bajson* && node -e 'import(`./package/index.js`)' && node -e 'import(`./package/index.cjs`);'",
+		"preversion": "make preversion",
 		"postversion": "rm -rf /tmp/bajson_build"
 	},
 	"files": [
