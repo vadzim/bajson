@@ -9,7 +9,7 @@
 		"lint": "prettier --cache --check .",
 		"format": "prettier --cache --write .",
 		"preversion": "make preversion",
-		"postversion": "rm -rf /tmp/bajson_build"
+		"postversion": "make postversion"
 	},
 	"files": [
 		"index.*",
