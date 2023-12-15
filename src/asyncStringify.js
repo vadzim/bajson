@@ -123,7 +123,7 @@ export async function* stringify(
 			commaNeeded: false,
 			indentNeeded: false,
 			key: null,
-			indentIndex: (prevHead ? prevHead.indentIndex : -1) + 1,
+			indentIndex: prevHead ? prevHead.indentIndex + 1 : 0,
 		}
 	}
 
