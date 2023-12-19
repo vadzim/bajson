@@ -25,7 +25,11 @@ const toArray = async asyncIterable => {
 	return ret
 }
 
+const isPlainObject = value =>
+	value && (!Object.getPrototypeOf(value) || Object.getPrototypeOf(value) === Object.getPrototypeOf({}))
+
 const toPlain = async data => {
+	data = await data
 	if (data && typeof data === "object" && !(data instanceof Uint8Array)) {
 		if (typeof data[Symbol.iterator] === "function") {
 			return await Promise.all((await toArray(data)).map(toPlain))
@@ -39,15 +43,42 @@ const toPlain = async data => {
 				return Object.fromEntries(array)
 			}
 			return array
-		} else if (Object.getPrototypeOf(data) === Object.getPrototypeOf({})) {
+		} else if (isPlainObject(data)) {
 			return Object.fromEntries(
 				await Promise.all(Object.entries(data).map(async ([k, v]) => [k, await toPlain(v)])),
 			)
-		} else if (typeof data.then === "function") {
-			return await toPlain(await data)
 		}
 	}
 	return data
+}
+
+const ndjsonStringify = (value, replacer, indent) => {
+	value = JSON.parse(JSON.stringify(value, replacer) ?? "null")
+	return (Array.isArray(value) ? value : [value])
+		.map(item => (JSON.stringify(item, undefined, indent) ?? "null") + "\n")
+		.join("")
+}
+
+const itemPerLineStringify = (value, replacer, indent) => {
+	value = JSON.parse(JSON.stringify(value, replacer) ?? "null")
+
+	const joinItems = ([open = "", close = ""], items) =>
+		open + items.map(item => item + "\n").join(",") + close
+
+	if (Array.isArray(value))
+		return joinItems(
+			"[]",
+			value.map(item => JSON.stringify(item, undefined, indent) ?? "null"),
+		)
+	if (value && typeof value === "object") {
+		return joinItems(
+			"{}",
+			Object.entries(value).map(
+				([key, item]) => JSON.stringify(String(key)) + ":" + JSON.stringify(item, undefined, indent),
+			),
+		)
+	}
+	return JSON.stringify(value, undefined, indent) ?? "null"
 }
 
 const getText = async (data, replacer, options) => {
@@ -76,6 +107,12 @@ await describe("main", async () => {
 		() => "ab\n\t❤️😱c",
 		() => 1234,
 		() => date,
+		() => ({ a: 99 }),
+		() => ({ a: Promise.resolve(199) }),
+		() => ({ a: Promise.resolve({ b: 299 }) }),
+		() => [399],
+		() => [Promise.resolve(499)],
+		() => [Promise.resolve({ b: 599 })],
 		() => ({ "": 12, "***": 23, 34: 45 }),
 		() => ({ a: 123, b: null, c: "str", d: [], e: {}, f: [345], g: { h: 567 } }),
 		() => ({
@@ -88,11 +125,17 @@ await describe("main", async () => {
 			},
 		}),
 		() => ({ [Symbol()]: 123, b: 321 }),
-		() => ((x = { a: 1, toJSON: () => ({ ...x }) }) => x)(),
-		() => ((x = Promise.resolve({ a: 1, toJSON: () => ({ ...x }) })) => x)(),
-		() => ((x = { a: 1, toJSON: () => Promise.resolve({ ...x }) }) => x)(),
+		() => ((x = { a: 17, toJSON: () => ({ ...x }) }) => x)(),
+		() => ((x = { a: 117, toJSON: () => ({ a: 1117 }) }) => x)(),
+		() => ((x = { a: 117, toJSON: b => ({ b }) }) => x)(),
+		() => ((x = Promise.resolve({ a: 27, toJSON: () => ({ ...x }) })) => x)(),
+		() => ((x = { a: 37, toJSON: () => Promise.resolve({ ...x }) }) => x)(),
+		() => ({ a: { toJSON: k => k } }),
+		() => ({ b: Promise.resolve({ toJSON: k => k }) }),
 		...[
 			() => [
+				{ toJSON: k => k },
+				{ toJSON: k => ({ [k]: k }) },
 				Promise.resolve(33),
 				(function* () {
 					yield { x: 44 }
@@ -149,127 +192,109 @@ await describe("main", async () => {
 		const plainData = await toPlain(data())
 
 		await test(`with data = ${inspect(plainData, inspectOptions)}`, async () => {
-			const check = async (replacer = undefined, indent = undefined) => {
-				await test("without ndjson", async () => {
-					const getTextResult = await getText(data(), replacer, indent)
-					const jsonStringifyResult = fixText(JSON.stringify(plainData, replacer, indent))
-					assert.equal(getTextResult, jsonStringifyResult)
-				})
-				await test("with ndjson", async () => {
-					const getTextResult = await getText(data(), replacer, { indent, ndjson: true })
-					const jsonStringifyResult = fixText(
-						(Array.isArray(plainData) ? plainData : [plainData])
-							.map(x => (JSON.stringify(x, replacer, indent) ?? "null") + "\n")
-							.join(""),
-					)
-					assert.equal(getTextResult, jsonStringifyResult)
-				})
+			/**
+			 * @param {unknown} replacer
+			 * @param {unknown} indent
+			 */
+			const checkStdStringify = async (replacer = undefined, indent = undefined) => {
+				const getTextResult = await getText(data(), replacer, indent)
+				const jsonStringifyResult = fixText(JSON.stringify(plainData, replacer, indent))
+				assert.equal(getTextResult, jsonStringifyResult)
 			}
+			checkStdStringify("string")
 
-			for (const indent of [
-				"",
-				undefined,
-				null,
-				false,
-				true,
-				Symbol.iterator,
-				() => {},
-				{},
-				[],
-				"\x20",
-				"\x20\x20",
-				"\x20\x20\x20",
-				"".padEnd(15, "\x20"),
-				"\t",
-				"\t\t",
-				"\t\t\t",
-				"".padEnd(15, "\t"),
-				"w",
-				"ww",
-				"www",
-				"".padEnd(15, "w"),
-				"x".padEnd(16, "😱"),
-				0,
-				-0,
-				1,
-				3,
-				-1,
-				Infinity,
-				11,
-				88,
-				3.1416,
-				2.71,
-				0.1,
-				0.001,
-				-3.1416,
-				-2.71,
-				-0.1,
-				-0.001,
-			]) {
-				await test(`with indent = ${inspect(indent, inspectOptions)}`, async () => {
-					await check(undefined, indent)
-				})
-			}
+			await test("indents", async () => {
+				for (const indent of [
+					"",
+					undefined,
+					null,
+					false,
+					true,
+					Symbol.iterator,
+					() => {},
+					{},
+					[],
+					"\x20",
+					"\x20\x20",
+					"\x20\x20\x20",
+					"".padEnd(15, "\x20"),
+					"\t",
+					"\t\t",
+					"\t\t\t",
+					"".padEnd(15, "\t"),
+					"w",
+					"ww",
+					"www",
+					"".padEnd(15, "w"),
+					"x".padEnd(16, "😱"),
+					0,
+					-0,
+					1,
+					3,
+					-1,
+					Infinity,
+					11,
+					88,
+					3.1416,
+					2.71,
+					0.1,
+					0.001,
+					-3.1416,
+					-2.71,
+					-0.1,
+					-0.001,
+				]) {
+					await test(`with indent = ${inspect(indent, inspectOptions)}`, async () => {
+						await checkStdStringify(undefined, indent)
+					})
+				}
+			})
 			await test("with a replacer", async () => {
-				await check((k, x) => (typeof x === "object" ? x : String(x)))
+				await checkStdStringify((k, x) => (typeof x === "object" ? x : String(x)))
 			})
 			await test("with a wrong replacer", async () => {
-				await check("string")
+				await checkStdStringify("string")
+			})
+			await test("ndjson", async () => {
+				const getTextResult = await getText(data(), undefined, { ndjson: true })
+				const jsonStringifyResult = fixText(ndjsonStringify(plainData))
+				assert.equal(getTextResult, jsonStringifyResult)
+			})
+			await test("itemPerLine", async () => {
+				const getTextResult = await getText(data(), undefined, { itemPerLine: true })
+				const jsonStringifyResult = fixText(itemPerLineStringify(plainData))
+				assert.equal(getTextResult, jsonStringifyResult)
 			})
 		})
 	}
 })
 
-// import bfj from "bfj"
-// let json = JSON.parse(String(fs.readFileSync("./1.json")))
-// json = [...new Array(100)].map(() => json)
+const time = async func => {
+	const start = process.cpuUsage()
+	const result = await func()
+	const stop = process.cpuUsage(start)
+	const duration = stop.user + stop.system
+	return [duration / 1_000_000, result]
+}
 
-// {
-// 	console.time("standard")
-// 	const standard = JSON.stringify(json)
-// 	console.timeEnd("standard")
-// 	console.log(standard.length)
-
-// 	{
-// 		console.time("text")
-// 		const text = await getText(json)
-// 		console.timeEnd("text")
-// 		console.log(text.length)
-
-// 		console.log(standard === text)
-// 	}
-
-// 	{
-// 		console.time("text to file")
-// 		await pipeline(stringify(json), fs.createWriteStream("./00.json"))
-// 		console.timeEnd("text to file")
-// 	}
-
-// 	{
-// 		console.time("bfj to file stream")
-// 		await pipeline(bfj.streamify(json), fs.createWriteStream("./11.json"))
-// 		console.timeEnd("bfj to file stream")
-// 	}
-
-// 	{
-// 		console.time("bfj to file")
-// 		await bfj.write("./22.json", json)
-// 		console.timeEnd("bfj to file")
-// 	}
-// }
-
-// {
-// 	console.time("standard+")
-// 	const standard = JSON.stringify(json, undefined, 2)
-// 	console.timeEnd("standard+")
-// 	console.log(standard.length)
-
-// 	console.time("text+")
-// 	const text = await getText(json, undefined, 2)
-// 	console.timeEnd("text+")
-// 	console.log(text.length)
-
-// 	console.log(standard === text)
-
-// 	fs.writeFileSync("./2.json", text)
-// }
+await test("performance", async () => {
+	const [dataDuration, data] = await time(() =>
+		[...new Array(300)].map((_, index) =>
+			Object.fromEntries(
+				[...new Array(100)].map((_, index) => [
+					"c" + index,
+					[...new Array(100)].map((_, index) => ["b" + index, [Math.random(), Math.random(), Math.random()]]),
+				]),
+			),
+		),
+	)
+	const [jsonDuration, json] = await time(() => JSON.stringify(data))
+	const [textDuration, textSize] = await time(async () => {
+		let size = 0
+		for await (const chunk of stringify(data)) size += chunk.length
+		return size
+	})
+	if (textDuration > jsonDuration * 5) {
+		assert.equal({ textDuration, jsonDuration }, {})
+	}
+})

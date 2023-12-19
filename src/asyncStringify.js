@@ -1,93 +1,102 @@
-const ENTRIES = 0
-const VALUES = 1
-const ITERATOR = 2
-const ASYNC = 3
-const ASYNC_ENTRIES = 4
-const ASYNC_STRING = 5
-
-// type StackItem = {
-// 	type: number
-// 	items?: Iterator<unknown> | AsyncIterator<unknown> | [key: string, value: unknown][] | unknown[]
-// 	currentCount?: number
-// 	commaNeeded?: boolean
-// 	indentNeeded?: boolean
-// 	key?: string
-// }
-
-export async function* stringify(
-	data /*: unknown*/,
-	replacer /*?: (key: string, value: unknown) => unknown*/,
-	options /*?: ;number | string | { indent: number | string, chunkSize: number, ndjson: boolean }*/,
-) {
+/**
+ * @param {unknown} [data]
+ * @param {undefined | ((key: string, value: unknown) => unknown)} [replacer=undefined]
+ * @param {number | string | {
+ * 		indent: number | string
+ * 		chunkSize: number
+ * 		ndjson: boolean
+ * 		itemPerLine: boolean
+ * 	}} [options=undefined]
+ * @return {AsyncIterable<Uint8Array>}
+ */
+export async function* stringify(data, replacer, options) {
 	const {
 		chunkSize = 10000,
 		ndjson = false,
+		itemPerLine = false,
 		indent = undefined,
 	} = typeof options === "object" ? options ?? {} : { indent: options }
 
+	const parsedIndent = parseIndent(indent)
+
+	if ([parsedIndent !== undefined, itemPerLine, ndjson].filter(Boolean).length > 1) {
+		throw new Error("Either indent, ndjson or itemPerLine should be specified")
+	}
+
+	//
+	//
+	const ENTRIES = 0
+	const ASYNC_ENTRIES = 1
+	const ARRAY = 2
+	const ITERATOR = 3
+	const ASYNC_ITERATOR = 4
+	const ASYNC_STRING = 5
+
+	/**
+	 * @typedef {
+	 * 	| {
+	 * 		type: ENTRIES
+	 * 		items: Array<[string | Symbol, unknown]>
+	 * 		currentIndex: number
+	 * 		key: string
+	 * }
+	 * 	| {
+	 * 		type: ASYNC_ENTRIES
+	 * 		items: AsyncIterator<[string | Symbol, unknown]>
+	 * 		currentIndex: number
+	 * 		key: string
+	 * }
+	 * 	| {
+	 * 		type: ARRAY
+	 * 		items: Array<unknown>
+	 * 		currentIndex: number
+	 * 		key: string
+	 * }
+	 * 	| {
+	 * 		type: ITERATOR
+	 * 		items: Iterator<unknown>
+	 * 		currentIndex: number
+	 * 		key: string
+	 * }
+	 * 	| {
+	 * 		type: ASYNC_ITERATOR
+	 * 		items: AsyncIterator<unknown>
+	 * 		currentIndex: number
+	 * 		key: string
+	 * }
+	 * 	| {
+	 * 		type: ASYNC_STRING
+	 * 		items: AsyncIterator<Uint8Array>
+	 * 		currentIndex: number
+	 * 		key: string
+	 * }
+	 * }  StackItem
+	 */
+
 	const encoder = new TextEncoder()
-	let head /*: StackItem | null*/ = null
+	/**@type StackItem | null*/
+	let head = null
 	let buffer = ""
 	let bufferYielded = false
-	const stack /*: StackItem[]*/ = []
-	const indents /*: string[]*/ = []
-
-	const parsedIndent = parseIndent(indent)
+	/**@type Array<StackItem>*/
+	const stack = []
 
 	if (typeof replacer !== "function") replacer = undefined
 
-	const getIndent = (indentIndex /*: number*/) =>
-		indentIndex < 0 ? "\n" : (indents[indentIndex] ??= getIndent(indentIndex - 1) + parsedIndent)
+	/**@type Array<string>*/
+	const indentCache = []
 
-	const pushChunk = (chunk /*: string*/) => {
+	/**@returns {string}*/
+	const getIndent = (/**@type number*/ indentIndex) =>
+		indentIndex < 0 ? "\n" : (indentCache[indentIndex] ??= getIndent(indentIndex - 1) + parsedIndent)
+
+	const pushChunk = (/**@type string*/ chunk) => {
 		buffer += chunk
 		return buffer.length >= chunkSize
 	}
 
-	const pushData = (rec /*: StackItem | null*/, chunk /*: string*/) => {
-		if (rec) {
-			if (rec.nlNeeded) {
-				pushChunk("\n")
-				rec.nlNeeded = false
-			}
-			if (rec.commaNeeded) {
-				pushChunk(",")
-				rec.commaNeeded = false
-			}
-			if (rec.indentNeeded) {
-				if (typeof parsedIndent === "string") {
-					pushChunk(getIndent(rec.indentIndex))
-				}
-				rec.indentNeeded = false
-			}
-			if (rec.key != null) {
-				pushChunk(JSON.stringify(rec.key))
-				pushChunk(typeof parsedIndent === "string" ? ": " : ":")
-				rec.key = null
-			}
-		}
-		return pushChunk(chunk)
-	}
-
-	const pushArrayStart = () => {
-		const prevHead = stack[stack.length - 1]
-		if (prevHead || !ndjson) {
-			return pushData(prevHead, "[")
-		} else {
-			head.indentIndex = -1
-		}
-	}
-
-	const pushClose = (rec /*: StackItem | null*/, chunk /*: string*/) => {
-		if (rec.currentCount > 0) {
-			if (typeof parsedIndent === "string") {
-				pushChunk(getIndent(rec.indentIndex - 1))
-			}
-		}
-		return pushChunk(chunk)
-	}
-
-	let pause
+	/**@type Promise<unknown> | undefined*/
+	let pause = undefined
 
 	const getBuffer = () => {
 		const result = encoder.encode(buffer)
@@ -101,56 +110,120 @@ export async function* stringify(
 		return result
 	}
 
-	const callToJSON = (value /*: unknown*/) /*: unknown*/ => {
-		const toJSON = value?.toJSON
-		if (typeof toJSON === "function") value = toJSON.call(value)
+	/**@return {unknown}*/
+	const callToJSON = (/**@type string*/ key, /**@type unknown*/ value) => {
+		const toJSON = /**@type undefined | { toJSON?: (key: string) => unknown }*/ (value)?.toJSON
+		if (typeof toJSON === "function") {
+			return toJSON.call(value, key)
+		}
 		return value
 	}
 
-	const getValue = (key /*: unknown*/, value /*: unknown*/) /*: unknown*/ => {
-		if (replacer) value = replacer(String(key), value)
-		return callToJSON(value)
+	const getValue = (/**@type string*/ key, /**@type unknown*/ value) => {
+		if (replacer) {
+			value = replacer(key, value)
+		}
+		return callToJSON(key, value)
 	}
 
-	const newHead = (type /*: number*/, items /*: unknown*/) => {
-		const prevHead = head
+	/**@return {StackItem}*/
+	const newHead = (/**@type StackItem["type"]*/ type, /**@type StackItem["items"]*/ items) => {
 		if (head) stack.push(head)
 		head = {
 			type,
 			items,
-			currentCount: 0,
-			nlNeeded: false,
-			commaNeeded: false,
-			indentNeeded: false,
-			key: null,
-			indentIndex: prevHead ? prevHead.indentIndex + 1 : 0,
+			currentIndex: 0,
+			dataPushed: false,
+			key: "",
 		}
 	}
 
-	const processCloseArray = () => (!ndjson || stack.length > 0 ? "]" : "")
+	const pushArrayStart = () => {
+		if (ndjson && stack.length === 0) {
+			return false
+		}
+		return pushChunk("[")
+	}
 
-	try {
-		const processObjectEntry = entry => {
-			head.nlNeeded = false
-			head.commaNeeded ||= head.currentCount > 0 && head.key == null
-			head.indentNeeded = true
-			head.key = entry[0]
-			current = typeof head.key === "symbol" ? undefined : getValue(head.key, entry[1])
-			head.currentCount++
+	const pushArrayClose = () => {
+		if (ndjson && stack.length === 0) {
+			return false
+		}
+		if (head.dataPushed) {
+			if (parsedIndent !== undefined) {
+				pushChunk(getIndent(stack.length - 1))
+			}
+			if (itemPerLine && stack.length === 0) {
+				pushChunk("\n")
+			}
+		}
+		return pushChunk("]")
+	}
+
+	const pushObjectStart = () => {
+		return pushChunk("{")
+	}
+
+	const pushObjectClose = () => {
+		if (head.dataPushed) {
+			if (parsedIndent !== undefined) {
+				pushChunk(getIndent(stack.length - 1))
+			}
+			if (itemPerLine && stack.length === 0) {
+				pushChunk("\n")
+			}
+		}
+		return pushChunk("}")
+	}
+
+	const pushItemStart = () => {
+		if (!head) {
+			return
 		}
 
-		const processArrayItem = item => {
-			if (ndjson && stack.length === 0) {
-				head.nlNeeded = head.currentCount > 0
-				head.commaNeeded = false
-				head.indentNeeded = false
-			} else {
-				head.nlNeeded = false
-				head.commaNeeded = head.currentCount > 0
-				head.indentNeeded = true
+		if (head.dataPushed) {
+			if (stack.length === 0) {
+				if (ndjson && (head.type === ARRAY || head.type === ITERATOR || head.type === ASYNC_ITERATOR)) {
+					pushChunk("\n")
+					return
+				}
+				if (itemPerLine) {
+					pushChunk("\n")
+				}
 			}
-			current = getValue(head.currentCount, item)
-			head.currentCount++
+			pushChunk(",")
+		}
+		head.dataPushed = true
+
+		if (parsedIndent !== undefined) {
+			pushChunk(getIndent(stack.length))
+		}
+
+		if (head.type === ENTRIES || head.type === ASYNC_ENTRIES) {
+			pushChunk(JSON.stringify(head.key))
+			pushChunk(":")
+			if (parsedIndent !== undefined) {
+				pushChunk(" ")
+			}
+		}
+	}
+
+	try {
+		const processObjectEntry = (/**@type [string | Symbol, unknown]*/ entry) => {
+			if (typeof entry[0] === "symbol") {
+				head.key = ""
+				current = undefined
+			} else {
+				head.key = String(entry[0])
+				current = getValue(head.key, entry[1])
+			}
+			head.currentIndex++
+		}
+
+		const processArrayItem = (/**@type unknown*/ item) => {
+			head.key = String(head.currentIndex)
+			current = getValue(head.key, item)
+			head.currentIndex++
 		}
 
 		let current = getValue("", data)
@@ -162,43 +235,50 @@ export async function* stringify(
 					case "number":
 					case "boolean":
 					case "string": {
+						pushItemStart()
 						const json = JSON.stringify(current)
-						pushData(head, json) && (yield getBuffer(), await pause)
+						pushChunk(json) && (yield getBuffer(), await pause)
 						break
 					}
 					case "object": {
 						if (!current) {
-							pushData(head, "null") && (yield getBuffer(), await pause)
+							pushItemStart()
+							pushChunk("null") && (yield getBuffer(), await pause)
 							break
 						}
 						if (Array.isArray(current)) {
-							newHead(VALUES, current)
+							pushItemStart()
+							newHead(ARRAY, current)
 							pushArrayStart() && (yield getBuffer(), await pause)
 							break
 						}
-						const iterator = current[Symbol.iterator]
+						const iterator = /**@type Iterable<unknown>*/ (current)[Symbol.iterator]
 						if (typeof iterator === "function") {
+							pushItemStart()
 							newHead(ITERATOR, iterator.call(current))
 							pushArrayStart() && (yield getBuffer(), await pause)
 							break
 						}
-						const asyncIterator = current[Symbol.asyncIterator]
+						const asyncIterator = /**@type AsyncIterable<unknown>*/ (current)[Symbol.asyncIterator]
 						if (typeof asyncIterator === "function") {
-							newHead(ASYNC, asyncIterator.call(current))
+							pushItemStart()
+							newHead(ASYNC_ITERATOR, asyncIterator.call(current))
 							break
 						}
-						if (convertPromise && typeof current.then === "function") {
+						if (convertPromise && typeof (/**@type Promise<unknown>*/ (current).then) === "function") {
 							current = getValue(head?.key ?? "", await current)
 							convertPromise = false
 							continue
 						}
-						pushData(head, "{") && (yield getBuffer(), await pause)
+						pushItemStart()
 						newHead(ENTRIES, Object.entries(current))
+						pushObjectStart() && (yield getBuffer(), await pause)
 						break
 					}
 					default: {
 						if (head?.type !== ENTRIES && head?.type !== ASYNC_ENTRIES) {
-							pushData(head, "null") && (yield getBuffer(), await pause)
+							pushItemStart()
+							pushChunk("null") && (yield getBuffer(), await pause)
 						}
 					}
 				}
@@ -208,19 +288,19 @@ export async function* stringify(
 				let close
 				switch (head.type) {
 					case ENTRIES: {
-						if (head.currentCount < head.items.length) {
-							processObjectEntry(head.items[head.currentCount])
+						if (head.currentIndex < head.items.length) {
+							processObjectEntry(head.items[head.currentIndex])
 							break loop
 						}
-						close = "}"
+						close = pushObjectClose
 						break
 					}
-					case VALUES: {
-						if (head.currentCount < head.items.length) {
-							processArrayItem(head.items[head.currentCount])
+					case ARRAY: {
+						if (head.currentIndex < head.items.length) {
+							processArrayItem(head.items[head.currentIndex])
 							break loop
 						}
-						close = processCloseArray()
+						close = pushArrayClose
 						break
 					}
 					case ITERATOR: {
@@ -229,7 +309,7 @@ export async function* stringify(
 							processArrayItem(result.value)
 							break loop
 						}
-						close = processCloseArray()
+						close = pushArrayClose
 						break
 					}
 					case ASYNC_ENTRIES: {
@@ -245,33 +325,39 @@ export async function* stringify(
 							processObjectEntry(result.value)
 							break loop
 						}
-						close = "}"
+						close = pushObjectClose
 						break
 					}
 					case ASYNC_STRING: {
 						const prevHead = stack[stack.length - 1]
 						const decoder = new TextDecoder()
-						const firstChunk = JSON.stringify(decoder.decode(current.value, { stream: true })) //
-							.slice(0, -1)
-						pushData(prevHead, firstChunk) && (yield getBuffer(), await pause)
-						for (; (current = await head.items.next()), !current.done; ) {
-							if (!(current.value instanceof Uint8Array)) {
+						const firstChunk = JSON.stringify(
+							decoder.decode(/**@type IteratorResult<unknown>*/ (current).value, { stream: true }),
+						).slice(0, -1)
+						pushChunk(firstChunk) && (yield getBuffer(), await pause)
+						for (
+							/**@type IteratorResult<unknown>*/
+							let rec;
+							(rec = await head.items.next()), !rec.done;
+
+						) {
+							if (!(rec.value instanceof Uint8Array)) {
 								throw new TypeError("The whole stream should be binary")
 							}
-							const chunk = JSON.stringify(decoder.decode(current.value, { stream: true })).slice(1, -1)
-							pushData(prevHead, chunk) && (yield getBuffer(), await pause)
+							const chunk = JSON.stringify(decoder.decode(rec.value, { stream: true })).slice(1, -1)
+							pushChunk(chunk) && (yield getBuffer(), await pause)
 						}
 						// Pop head only after the items is completely consumed.
 						// head.items are disposed in the finally block in case of some exceptions.
 						head = stack.pop()
 						const lastChunk = JSON.stringify(decoder.decode()).slice(1)
-						pushData(head, lastChunk) && (yield getBuffer(), await pause)
+						pushChunk(lastChunk) && (yield getBuffer(), await pause)
 						continue
 					}
-					case ASYNC: {
+					case ASYNC_ITERATOR: {
 						const result = await head.items.next()
 
-						if (head.currentCount === 0) {
+						if (head.currentIndex === 0) {
 							if (!result.done) {
 								if (result.value instanceof Uint8Array) {
 									current = result
@@ -283,9 +369,8 @@ export async function* stringify(
 									result.value.length === 2 &&
 									typeof result.value[0] === "symbol"
 								) {
-									const prevHead = stack[stack.length - 1]
-									pushData(prevHead, "{") && (yield getBuffer(), await pause)
 									head.type = ASYNC_ENTRIES
+									pushObjectStart() && (yield getBuffer(), await pause)
 									processObjectEntry(result.value)
 									break loop
 								}
@@ -297,14 +382,14 @@ export async function* stringify(
 							processArrayItem(result.value)
 							break loop
 						}
-						close = processCloseArray()
+						close = pushArrayClose
 						break
 					}
 					default: {
 						throw new Error(`unreachable, ${head.type}`)
 					}
 				}
-				close && pushClose(head, close) && (yield getBuffer(), await pause)
+				close?.() && (yield getBuffer(), await pause)
 				head = stack.pop()
 			}
 		} while (head)
@@ -319,13 +404,18 @@ export async function* stringify(
 		}
 		throw error
 	}
-	if (ndjson && (bufferYielded || buffer)) pushData(undefined, "\n")
-	if (!bufferYielded || buffer) yield getBuffer()
+	if (ndjson && (bufferYielded || buffer.length > 0)) pushChunk("\n")
+
+	// yield the last chunk if needed
+	if (buffer.length > 0) yield getBuffer()
+
+	// if no chunks were yielded yield an empty chunk to mark our stream as binary
+	if (!bufferYielded) yield getBuffer()
 }
 
 const getPause = () => new Promise(setImmediate)
 
-const parseIndent = indent => {
+const parseIndent = (/**@type unknown*/ indent) => {
 	if (!indent) return undefined
 	if (typeof indent === "number") {
 		if (indent <= 0) return undefined
@@ -338,12 +428,13 @@ const parseIndent = indent => {
 //
 // a helper to explicitely mark async stream as a string rather then as an array
 //
-export const asAsyncBuffer = (stream /*: AsyncIterable<unknown>*/) =>
+export const asAsyncBuffer = (/**@type AsyncIterable<Uint8Array>*/ stream) =>
 	stream instanceof AsyncBufferProxy ? stream : new AsyncBufferProxy(stream)
 
 class AsyncBufferProxy {
-	#stream /*: AsyncIterator<unknown>*/
-	constructor(stream /*: AsyncIterator<unknown>*/) {
+	/**@type AsyncIterable<Uint8Array>*/
+	#stream
+	constructor(/**@type AsyncIterable<Uint8Array>*/ stream) {
 		if (typeof stream?.[Symbol.asyncIterator] !== "function") {
 			throw new TypeError("not an async iterator")
 		}
@@ -358,14 +449,15 @@ class AsyncBufferProxy {
 //
 // a helper to explicitely mark async stream as an object (emits key-value pairs) rather then as an array
 //
-export const asAsyncObject = (stream /*: AsyncIterable<unknown>*/) =>
+export const asAsyncObject = (/**@type AsyncIterable<[string | Symbol, unknown]>*/ stream) =>
 	stream instanceof AsyncObjectProxy ? stream : new AsyncObjectProxy(stream)
 
 const asyncObjectMark = Symbol("asyncObjectMark")
 
 class AsyncObjectProxy {
-	#stream /*: AsyncIterator<unknown>*/
-	constructor(stream /*: AsyncIterator<unknown>*/) {
+	/**@type AsyncIterable<[string | Symbol, unknown]>*/
+	#stream
+	constructor(/**@type AsyncIterable<[string | Symbol, unknown]>*/ stream) {
 		if (typeof stream?.[Symbol.asyncIterator] !== "function") {
 			throw new TypeError("not an async iterator")
 		}
