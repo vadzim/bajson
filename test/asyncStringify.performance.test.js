@@ -30,7 +30,7 @@ await test("performance", async () => {
 		for await (const chunk of stringify(data)) size += chunk.length
 		return size
 	})
-	if (textDuration > jsonDuration * 5) {
-		assert.equal({ textDuration, jsonDuration }, {})
-	}
+	await test(`std: ${jsonDuration}; bajson: ${textDuration}`, () => {
+		assert.ok(textDuration < jsonDuration * 5)
+	})
 })
