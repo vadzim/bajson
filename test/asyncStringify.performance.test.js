@@ -25,12 +25,14 @@ await test("performance", async () => {
 		),
 	)
 	const [jsonDuration, json] = await time(() => JSON.stringify(data))
+	const jsonData = new TextEncoder().encode(json)
 	const [textDuration, textSize] = await time(async () => {
 		let size = 0
 		for await (const chunk of stringify(data)) size += chunk.length
 		return size
 	})
 	await test(`std: ${jsonDuration}; bajson: ${textDuration}`, () => {
+		assert.equal(jsonData.length, textSize)
 		assert.ok(textDuration < jsonDuration * 5)
 	})
 })
