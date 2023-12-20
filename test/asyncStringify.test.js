@@ -4,8 +4,6 @@ import "../index.js"
 
 // main test
 import { stringify, asAsyncObject } from "../index.js"
-import * as fs from "node:fs"
-import { pipeline } from "node:stream/promises"
 import assert from "node:assert/strict"
 import { test, describe } from "node:test"
 import { inspect } from "node:util"
