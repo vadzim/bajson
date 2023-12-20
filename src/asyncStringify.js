@@ -20,7 +20,7 @@ export async function* stringify(data, replacer, options) {
 	const parsedIndent = parseIndent(indent)
 
 	if ([parsedIndent !== undefined, itemPerLine, ndjson].filter(Boolean).length > 1) {
-		throw new Error("Either indent, ndjson or itemPerLine should be specified")
+		throw new Error("Only one of indent, ndjson or itemPerLine can be specified")
 	}
 
 	//
