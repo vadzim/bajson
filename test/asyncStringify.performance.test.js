@@ -3,11 +3,14 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 
 const time = async func => {
-	const start = process.cpuUsage()
+	// const start = process.cpuUsage()
+	const start = Date.now()
 	const result = await func()
-	const stop = process.cpuUsage(start)
-	const duration = stop.user + stop.system
-	return [duration / 1_000_000, result]
+	// const stop = process.cpuUsage(start)
+	const stop = Date.now()
+	// const duration = (stop.user + stop.system) / 1_000_000
+	const duration = (stop - start) / 1_000
+	return [duration, result]
 }
 
 await test("performance", async () => {
