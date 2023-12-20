@@ -11,7 +11,7 @@
  */
 export async function* stringify(data, replacer, options) {
 	const {
-		chunkSize = 10000,
+		chunkSize = 10_000,
 		ndjson = false,
 		itemPerLine = false,
 		indent = undefined,
