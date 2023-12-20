@@ -13,6 +13,14 @@ const time = async func => {
 	return [duration, result]
 }
 
+const formatSize = size => {
+	if (size < 1e3) return `${size}B`
+	if (size < 1e6) return `${(size / 1e3).toFixed(2)}K`
+	if (size < 1e9) return `${(size / 1e6).toFixed(2)}M`
+	if (size < 1e12) return `${(size / 1e9).toFixed(2)}G`
+	return `${(size / 1e12).toFixed(2)}T`
+}
+
 await test("performance", async () => {
 	const [dataDuration, data] = await time(() =>
 		[...new Array(300)].map((_, index) =>
@@ -31,7 +39,8 @@ await test("performance", async () => {
 		for await (const chunk of stringify(data)) size += chunk.length
 		return size
 	})
-	await test(`std: ${jsonDuration}; bajson: ${textDuration}`, () => {
+	const message = `data size: ${formatSize(jsonData.length)}; std: ${jsonDuration}s; bajson: ${textDuration}s`
+	await test(message, () => {
 		assert.equal(jsonData.length, textSize)
 		assert.ok(textDuration < jsonDuration * 5)
 	})
