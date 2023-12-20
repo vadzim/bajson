@@ -3,6 +3,8 @@
 BUILD_DIR=/tmp/bajson_build
 
 preversion:
+	node --version
+
 	npm run lint
 	npm run test
 
