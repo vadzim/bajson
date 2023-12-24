@@ -27,7 +27,6 @@ const isPlainObject = value =>
 	value && (!Object.getPrototypeOf(value) || Object.getPrototypeOf(value) === Object.getPrototypeOf({}))
 
 const toPlain = async data => {
-	data = await data
 	if (data && typeof data === "object" && !(data instanceof Uint8Array)) {
 		if (typeof data[Symbol.iterator] === "function") {
 			return await Promise.all((await toArray(data)).map(toPlain))
@@ -41,6 +40,10 @@ const toPlain = async data => {
 				return Object.fromEntries(array)
 			}
 			return array
+		} else if (typeof data.then === "function") {
+			// let thenable behave like toJSONable
+			const value = await toPlain(await data)
+			return { toJSON: key => (typeof value?.toJSON === "function" ? value.toJSON(key) : value) }
 		} else if (isPlainObject(data)) {
 			return Object.fromEntries(
 				await Promise.all(Object.entries(data).map(async ([k, v]) => [k, await toPlain(v)])),
@@ -106,6 +109,7 @@ await describe("main", async () => {
 		() => 1234,
 		() => date,
 		() => ({ a: 99 }),
+		() => ({ a: date }),
 		() => ({ a: Promise.resolve(199) }),
 		() => ({ a: Promise.resolve({ b: 299 }) }),
 		() => [399],
@@ -154,6 +158,7 @@ await describe("main", async () => {
 						yield* [
 							["aa", 42],
 							["bb", 55],
+							[Symbol("ss"), 66],
 							["cc", [89, 34, [{}]]],
 						]
 					})(),
@@ -199,7 +204,6 @@ await describe("main", async () => {
 				const jsonStringifyResult = fixText(JSON.stringify(plainData, replacer, indent))
 				assert.equal(getTextResult, jsonStringifyResult)
 			}
-			checkStdStringify("string")
 
 			await test("indents", async () => {
 				for (const indent of [
@@ -253,6 +257,14 @@ await describe("main", async () => {
 			await test("with a wrong replacer", async () => {
 				await checkStdStringify("string")
 			})
+			await test("with an array replacer", async () => {
+				await checkStdStringify(["a", "aa"])
+			})
+			await test("use this in a replacer", async () => {
+				await checkStdStringify(function (k, v) {
+					return this.a ?? v
+				})
+			})
 			await test("ndjson", async () => {
 				const getTextResult = await getText(data(), undefined, { ndjson: true })
 				const jsonStringifyResult = fixText(ndjsonStringify(plainData))
@@ -265,4 +277,19 @@ await describe("main", async () => {
 			})
 		})
 	}
+
+	await test("do not call toJSON on dropped items", async () => {
+		const args = [
+			{
+				a: 333,
+				b: {
+					toJSON() {
+						throw new Error("this toJSON should not be called")
+					},
+				},
+			},
+			["a"],
+		]
+		assert.equal(await getText(...args), JSON.stringify(...args))
+	})
 })

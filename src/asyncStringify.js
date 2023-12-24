@@ -1,6 +1,6 @@
 /**
  * @param {unknown} [data]
- * @param {undefined | ((key: string, value: unknown) => unknown)} [replacer=undefined]
+ * @param {undefined | Array<string | number> | ((key: string, value: unknown) => unknown)} [replacer=undefined]
  * @param {number | string | {
  * 		indent: number | string
  * 		chunkSize: number
@@ -39,36 +39,42 @@ export async function* stringify(data, replacer, options) {
 	 * 		items: Array<[string | Symbol, unknown]>
 	 * 		currentIndex: number
 	 * 		key: string
+	 * 		object: unknown
 	 * }
 	 * 	| {
 	 * 		type: ASYNC_ENTRIES
 	 * 		items: AsyncIterator<[string | Symbol, unknown]>
 	 * 		currentIndex: number
 	 * 		key: string
+	 * 		object: unknown
 	 * }
 	 * 	| {
 	 * 		type: ARRAY
 	 * 		items: Array<unknown>
 	 * 		currentIndex: number
 	 * 		key: string
+	 * 		object: unknown
 	 * }
 	 * 	| {
 	 * 		type: ITERATOR
 	 * 		items: Iterator<unknown>
 	 * 		currentIndex: number
 	 * 		key: string
+	 * 		object: unknown
 	 * }
 	 * 	| {
 	 * 		type: ASYNC_ITERATOR
 	 * 		items: AsyncIterator<unknown>
 	 * 		currentIndex: number
 	 * 		key: string
+	 * 		object: unknown
 	 * }
 	 * 	| {
 	 * 		type: ASYNC_STRING
 	 * 		items: AsyncIterator<Uint8Array>
 	 * 		currentIndex: number
 	 * 		key: string
+	 * 		object: unknown
 	 * }
 	 * }  StackItem
 	 */
@@ -81,7 +87,12 @@ export async function* stringify(data, replacer, options) {
 	/**@type Array<StackItem>*/
 	const stack = []
 
-	if (typeof replacer !== "function") replacer = undefined
+	const parsedReplacer =
+		typeof replacer === "function"
+			? replacer
+			: Array.isArray(replacer)
+			  ? new Set(replacer.filter(key => typeof key === "string" || typeof key === "number").map(String))
+			  : undefined
 
 	/**@type Array<string>*/
 	const indentCache = []
@@ -114,24 +125,35 @@ export async function* stringify(data, replacer, options) {
 	const callToJSON = (/**@type string*/ key, /**@type unknown*/ value) => {
 		const toJSON = /**@type undefined | { toJSON?: (key: string) => unknown }*/ (value)?.toJSON
 		if (typeof toJSON === "function") {
-			return toJSON.call(value, key)
+			return toJSON.call(value, String(key ?? ""))
 		}
 		return value
 	}
 
-	const getValue = (/**@type string*/ key, /**@type unknown*/ value) => {
-		if (replacer) {
-			value = replacer(key, value)
+	const getValue = (/**@type unknown*/ object, /**@type string*/ key, /**@type unknown*/ value) => {
+		if (parsedReplacer) {
+			if (typeof parsedReplacer === "function") {
+				key = String(key ?? "")
+				return parsedReplacer.call(object ?? { [key]: value }, key, callToJSON(key, value))
+			} else if (object && !Array.isArray(object)) {
+				key = String(key ?? "")
+				return parsedReplacer.has(key) ? callToJSON(key, value) : undefined
+			}
 		}
 		return callToJSON(key, value)
 	}
 
 	/**@return {StackItem}*/
-	const newHead = (/**@type StackItem["type"]*/ type, /**@type StackItem["items"]*/ items) => {
+	const newHead = (
+		/**@type unknown**/ object,
+		/**@type StackItem["type"]*/ type,
+		/**@type StackItem["items"]*/ items,
+	) => {
 		if (head) stack.push(head)
 		head = {
 			type,
 			items,
+			object,
 			currentIndex: 0,
 			dataPushed: false,
 			key: "",
@@ -210,87 +232,90 @@ export async function* stringify(data, replacer, options) {
 
 	try {
 		const processObjectEntry = (/**@type [string | Symbol, unknown]*/ entry) => {
-			if (typeof entry[0] === "symbol") {
-				head.key = ""
-				current = undefined
-			} else {
-				head.key = String(entry[0])
-				current = getValue(head.key, entry[1])
-			}
 			head.currentIndex++
+			if (typeof entry[0] !== "string") {
+				return false
+			}
+			head.key = entry[0]
+			current = entry[1]
+			return true
 		}
 
 		const processArrayItem = (/**@type unknown*/ item) => {
-			head.key = String(head.currentIndex)
-			current = getValue(head.key, item)
+			head.key = head.currentIndex
+			current = item
 			head.currentIndex++
 		}
 
-		let current = getValue("", data)
+		let current = data
 
 		do {
-			let convertPromise = true
-			for (;;) {
-				switch (typeof current) {
-					case "number":
-					case "boolean":
-					case "string": {
+			if (
+				current != null &&
+				(typeof current === "object" || typeof current === "function") &&
+				typeof (/**@type Promise<unknown>*/ (current).then) === "function" &&
+				typeof (/**@type Iterable<unknown>*/ (current)[Symbol.iterator]) !== "function" &&
+				typeof (/**@type AsyncIterable<unknown>*/ (current)[Symbol.asyncIterator]) !== "function"
+			) {
+				current = await current
+			}
+			current = getValue(head?.object, head?.key ?? "", current)
+			switch (typeof current) {
+				case "number":
+				case "boolean":
+				case "string": {
+					pushItemStart()
+					const json = JSON.stringify(current)
+					pushChunk(json) && (yield getBuffer(), await pause)
+					break
+				}
+				case "object": {
+					if (!current) {
 						pushItemStart()
-						const json = JSON.stringify(current)
-						pushChunk(json) && (yield getBuffer(), await pause)
+						pushChunk("null") && (yield getBuffer(), await pause)
 						break
 					}
-					case "object": {
-						if (!current) {
-							pushItemStart()
-							pushChunk("null") && (yield getBuffer(), await pause)
-							break
-						}
-						if (Array.isArray(current)) {
-							pushItemStart()
-							newHead(ARRAY, current)
-							pushArrayStart() && (yield getBuffer(), await pause)
-							break
-						}
-						const iterator = /**@type Iterable<unknown>*/ (current)[Symbol.iterator]
-						if (typeof iterator === "function") {
-							pushItemStart()
-							newHead(ITERATOR, iterator.call(current))
-							pushArrayStart() && (yield getBuffer(), await pause)
-							break
-						}
-						const asyncIterator = /**@type AsyncIterable<unknown>*/ (current)[Symbol.asyncIterator]
-						if (typeof asyncIterator === "function") {
-							pushItemStart()
-							newHead(ASYNC_ITERATOR, asyncIterator.call(current))
-							break
-						}
-						if (convertPromise && typeof (/**@type Promise<unknown>*/ (current).then) === "function") {
-							current = getValue(head?.key ?? "", await current)
-							convertPromise = false
-							continue
-						}
+					if (Array.isArray(current)) {
 						pushItemStart()
-						newHead(ENTRIES, Object.entries(current))
-						pushObjectStart() && (yield getBuffer(), await pause)
+						newHead(current, ARRAY, current)
+						pushArrayStart() && (yield getBuffer(), await pause)
 						break
 					}
-					default: {
-						if (head?.type !== ENTRIES && head?.type !== ASYNC_ENTRIES) {
-							pushItemStart()
-							pushChunk("null") && (yield getBuffer(), await pause)
-						}
+					const iterator = /**@type Iterable<unknown>*/ (current)[Symbol.iterator]
+					if (typeof iterator === "function") {
+						pushItemStart()
+						newHead([], ITERATOR, iterator.call(current))
+						pushArrayStart() && (yield getBuffer(), await pause)
+						break
+					}
+					const asyncIterator = /**@type AsyncIterable<unknown>*/ (current)[Symbol.asyncIterator]
+					if (typeof asyncIterator === "function") {
+						pushItemStart()
+						newHead([], ASYNC_ITERATOR, asyncIterator.call(current))
+						break
+					}
+					pushItemStart()
+					newHead(current, ENTRIES, Object.entries(current))
+					pushObjectStart() && (yield getBuffer(), await pause)
+					break
+				}
+				default: {
+					if (head?.type !== ENTRIES && head?.type !== ASYNC_ENTRIES) {
+						pushItemStart()
+						pushChunk("null") && (yield getBuffer(), await pause)
 					}
 				}
-				break
 			}
 			loop: while (head) {
 				let close
 				switch (head.type) {
 					case ENTRIES: {
 						if (head.currentIndex < head.items.length) {
-							processObjectEntry(head.items[head.currentIndex])
-							break loop
+							if (processObjectEntry(head.items[head.currentIndex])) {
+								break loop
+							} else {
+								continue
+							}
 						}
 						close = pushObjectClose
 						break
@@ -322,8 +347,11 @@ export async function* stringify(data, replacer, options) {
 							) {
 								throw new TypeError("Invalid entries")
 							}
-							processObjectEntry(result.value)
-							break loop
+							if (processObjectEntry(result.value)) {
+								break loop
+							} else {
+								continue
+							}
 						}
 						close = pushObjectClose
 						break
@@ -370,9 +398,9 @@ export async function* stringify(data, replacer, options) {
 									typeof result.value[0] === "symbol"
 								) {
 									head.type = ASYNC_ENTRIES
+									head.object = {}
 									pushObjectStart() && (yield getBuffer(), await pause)
-									processObjectEntry(result.value)
-									break loop
+									continue
 								}
 							}
 							pushArrayStart() && (yield getBuffer(), await pause)
