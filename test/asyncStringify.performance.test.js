@@ -21,6 +21,73 @@ const formatSize = size => {
 	return `${(size / 1e12).toFixed(2)}T`
 }
 
+const refStringify = value => {
+	let buffer = ""
+	let result = 0
+
+	const push = chunk => {
+		buffer += chunk
+		if (buffer.length > 10_000) {
+			result += buffer.length
+			buffer = ""
+		}
+	}
+
+	const run = item => {
+		switch (typeof item) {
+			case "object": {
+				if (item === null) {
+					push("null")
+					break
+				}
+				if (Array.isArray(item)) {
+					push("[")
+					for (let i = 0; i < item.length; i++) {
+						if (i > 0) push(",")
+						run(item[i])
+					}
+					push("]")
+					break
+				}
+				push("{")
+				const items = Object.entries(item)
+				for (let i = 0; i < items.length; i++) {
+					if (i > 0) push(",")
+					push(JSON.stringify(items[i][0]))
+					push(":")
+					run(items[i][1])
+				}
+				push("}")
+				break
+			}
+			case "string": {
+				push(JSON.stringify(item))
+				break
+			}
+			case "number": {
+				push(String(item))
+				break
+			}
+			case "boolean": {
+				push(item ? "true" : "false")
+				break
+			}
+			case "undefined": {
+				push("null")
+				break
+			}
+			default: {
+				throw new Error("unimplemented")
+			}
+		}
+	}
+
+	run(value)
+	result += buffer.length
+
+	return result
+}
+
 await test("performance", async () => {
 	const [dataDuration, data] = await time(() =>
 		[...new Array(300)].map((_, index) =>
@@ -43,11 +110,15 @@ await test("performance", async () => {
 		}
 		return [size, count]
 	})
+	const [refDuration] = await time(async () => {
+		await refStringify(data)
+	})
 	const message = [
 		`data size: ${formatSize(jsonData.length)}`,
 		`std: ${jsonDuration}s`,
 		`bajson: ${textDuration}s`,
 		`chunks: ${chunkCount}`,
+		`ref: ${refDuration}s`,
 	].join("; ")
 	await test(message, () => {
 		assert.equal(jsonData.length, textSize)
