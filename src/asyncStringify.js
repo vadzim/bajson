@@ -101,9 +101,12 @@ export async function* stringify(data, replacer, options) {
 	const getIndent = (/**@type number*/ indentIndex) =>
 		indentIndex < 0 ? "\n" : (indentCache[indentIndex] ??= getIndent(indentIndex - 1) + parsedIndent)
 
+	const hasBuffer = () => {
+		return buffer.length >= chunkSize
+	}
+
 	const pushChunk = (/**@type string*/ chunk) => {
 		buffer += chunk
-		return buffer.length >= chunkSize
 	}
 
 	/**@type Promise<unknown> | undefined*/
@@ -123,6 +126,12 @@ export async function* stringify(data, replacer, options) {
 
 	/**@return {unknown}*/
 	const callToJSON = (/**@type string*/ key, /**@type unknown*/ value) => {
+		switch (typeof value) {
+			case "number":
+			case "boolean":
+			case "string":
+				return value
+		}
 		const toJSON = /**@type undefined | { toJSON?: (key: string) => unknown }*/ (value)?.toJSON
 		if (typeof toJSON === "function") {
 			return toJSON.call(value, String(key ?? ""))
@@ -162,14 +171,14 @@ export async function* stringify(data, replacer, options) {
 
 	const pushArrayStart = () => {
 		if (ndjson && stack.length === 0) {
-			return false
+			return
 		}
-		return pushChunk("[")
+		pushChunk("[")
 	}
 
 	const pushArrayClose = () => {
 		if (ndjson && stack.length === 0) {
-			return false
+			return
 		}
 		if (head.dataPushed) {
 			if (parsedIndent !== undefined) {
@@ -179,11 +188,11 @@ export async function* stringify(data, replacer, options) {
 				pushChunk("\n")
 			}
 		}
-		return pushChunk("]")
+		pushChunk("]")
 	}
 
 	const pushObjectStart = () => {
-		return pushChunk("{")
+		pushChunk("{")
 	}
 
 	const pushObjectClose = () => {
@@ -195,7 +204,7 @@ export async function* stringify(data, replacer, options) {
 				pushChunk("\n")
 			}
 		}
-		return pushChunk("}")
+		pushChunk("}")
 	}
 
 	const pushItemStart = () => {
@@ -230,15 +239,83 @@ export async function* stringify(data, replacer, options) {
 		}
 	}
 
+	const pushItem = item => {
+		switch (typeof item) {
+			case "number": {
+				pushItemStart()
+				const json = Number.isFinite(item) ? String(item) : "null"
+				pushChunk(json)
+				break
+			}
+			case "boolean": {
+				pushItemStart()
+				const json = item ? "true" : "false"
+				pushChunk(json)
+				break
+			}
+			case "bigint": {
+				// we already called toJSON so we can throw now
+				throw new TypeError("Do not know how to serialize a BigInt")
+			}
+			case "string": {
+				pushItemStart()
+				const json = JSON.stringify(item)
+				pushChunk(json)
+				break
+			}
+			case "object": {
+				if (item === null) {
+					pushItemStart()
+					pushChunk("null")
+					break
+				}
+				if (item instanceof Number || item instanceof String || item instanceof Boolean) {
+					pushItemStart()
+					pushChunk(JSON.stringify(item.valueOf()))
+					break
+				}
+				if (item instanceof BigInt) {
+					// we already called toJSON so we can throw now
+					throw new TypeError("Do not know how to serialize a BigInt")
+				}
+				if (Array.isArray(item)) {
+					pushItemStart()
+					newHead(item, ARRAY, item)
+					pushArrayStart()
+					break
+				}
+				const iterator = /**@type Iterable<unknown>*/ (item)[Symbol.iterator]
+				if (typeof iterator === "function") {
+					pushItemStart()
+					newHead([], ITERATOR, iterator.call(item))
+					pushArrayStart()
+					break
+				}
+				const asyncIterator = /**@type AsyncIterable<unknown>*/ (item)[Symbol.asyncIterator]
+				if (typeof asyncIterator === "function") {
+					pushItemStart()
+					newHead([], ASYNC_ITERATOR, asyncIterator.call(item))
+					break
+				}
+				pushItemStart()
+				newHead(item, ENTRIES, Object.entries(item))
+				pushObjectStart()
+				break
+			}
+			default: {
+				if (head?.type !== ENTRIES && head?.type !== ASYNC_ENTRIES) {
+					pushItemStart()
+					pushChunk("null")
+				}
+			}
+		}
+	}
+
 	try {
 		const processObjectEntry = (/**@type [string | Symbol, unknown]*/ entry) => {
-			head.currentIndex++
-			if (typeof entry[0] !== "string") {
-				return false
-			}
 			head.key = entry[0]
 			current = entry[1]
-			return true
+			head.currentIndex++
 		}
 
 		const processArrayItem = (/**@type unknown*/ item) => {
@@ -251,7 +328,7 @@ export async function* stringify(data, replacer, options) {
 
 		do {
 			if (
-				current != null &&
+				current !== null &&
 				(typeof current === "object" || typeof current === "function") &&
 				typeof (/**@type Promise<unknown>*/ (current).then) === "function" &&
 				typeof (/**@type Iterable<unknown>*/ (current)[Symbol.iterator]) !== "function" &&
@@ -260,64 +337,16 @@ export async function* stringify(data, replacer, options) {
 				current = await current
 			}
 			current = getValue(head?.object, head?.key ?? "", current)
-			switch (typeof current) {
-				case "number":
-				case "boolean":
-				case "string": {
-					pushItemStart()
-					const json = JSON.stringify(current)
-					pushChunk(json) && (yield getBuffer(), await pause)
-					break
-				}
-				case "object": {
-					if (!current) {
-						pushItemStart()
-						pushChunk("null") && (yield getBuffer(), await pause)
-						break
-					}
-					if (Array.isArray(current)) {
-						pushItemStart()
-						newHead(current, ARRAY, current)
-						pushArrayStart() && (yield getBuffer(), await pause)
-						break
-					}
-					const iterator = /**@type Iterable<unknown>*/ (current)[Symbol.iterator]
-					if (typeof iterator === "function") {
-						pushItemStart()
-						newHead([], ITERATOR, iterator.call(current))
-						pushArrayStart() && (yield getBuffer(), await pause)
-						break
-					}
-					const asyncIterator = /**@type AsyncIterable<unknown>*/ (current)[Symbol.asyncIterator]
-					if (typeof asyncIterator === "function") {
-						pushItemStart()
-						newHead([], ASYNC_ITERATOR, asyncIterator.call(current))
-						break
-					}
-					pushItemStart()
-					newHead(current, ENTRIES, Object.entries(current))
-					pushObjectStart() && (yield getBuffer(), await pause)
-					break
-				}
-				default: {
-					if (head?.type !== ENTRIES && head?.type !== ASYNC_ENTRIES) {
-						pushItemStart()
-						pushChunk("null") && (yield getBuffer(), await pause)
-					}
-				}
-			}
+			pushItem(current)
 			loop: while (head) {
-				let close
+				hasBuffer() && (yield getBuffer(), await pause)
 				switch (head.type) {
 					case ENTRIES: {
 						if (head.currentIndex < head.items.length) {
-							if (processObjectEntry(head.items[head.currentIndex])) {
-								break loop
-							} else {
-								continue
-							}
+							processObjectEntry(head.items[head.currentIndex])
+							break loop
 						}
-						close = pushObjectClose
+						pushObjectClose()
 						break
 					}
 					case ARRAY: {
@@ -325,7 +354,7 @@ export async function* stringify(data, replacer, options) {
 							processArrayItem(head.items[head.currentIndex])
 							break loop
 						}
-						close = pushArrayClose
+						pushArrayClose()
 						break
 					}
 					case ITERATOR: {
@@ -334,26 +363,26 @@ export async function* stringify(data, replacer, options) {
 							processArrayItem(result.value)
 							break loop
 						}
-						close = pushArrayClose
+						pushArrayClose()
 						break
 					}
 					case ASYNC_ENTRIES: {
 						const result = await head.items.next()
 						if (!result.done) {
-							if (
-								!Array.isArray(result.value) ||
-								result.value.length !== 2 ||
-								(typeof result.value[0] !== "string" && typeof result.value[0] !== "symbol")
-							) {
-								throw new TypeError("Invalid entries")
+							if (Array.isArray(result.value) && result.value.length === 2) {
+								switch (typeof result.value[0]) {
+									case "symbol": {
+										continue
+									}
+									case "string": {
+										processObjectEntry(result.value)
+										break loop
+									}
+								}
 							}
-							if (processObjectEntry(result.value)) {
-								break loop
-							} else {
-								continue
-							}
+							throw new TypeError("Invalid entry")
 						}
-						close = pushObjectClose
+						pushObjectClose()
 						break
 					}
 					case ASYNC_STRING: {
@@ -362,7 +391,8 @@ export async function* stringify(data, replacer, options) {
 						const firstChunk = JSON.stringify(
 							decoder.decode(/**@type IteratorResult<unknown>*/ (current).value, { stream: true }),
 						).slice(0, -1)
-						pushChunk(firstChunk) && (yield getBuffer(), await pause)
+						pushChunk(firstChunk)
+						hasBuffer() && (yield getBuffer(), await pause)
 						for (
 							/**@type IteratorResult<unknown>*/
 							let rec;
@@ -373,13 +403,15 @@ export async function* stringify(data, replacer, options) {
 								throw new TypeError("The whole stream should be binary")
 							}
 							const chunk = JSON.stringify(decoder.decode(rec.value, { stream: true })).slice(1, -1)
-							pushChunk(chunk) && (yield getBuffer(), await pause)
+							pushChunk(chunk)
+							hasBuffer() && (yield getBuffer(), await pause)
 						}
 						// Pop head only after the items is completely consumed.
 						// head.items are disposed in the finally block in case of some exceptions.
 						head = stack.pop()
 						const lastChunk = JSON.stringify(decoder.decode()).slice(1)
-						pushChunk(lastChunk) && (yield getBuffer(), await pause)
+						pushChunk(lastChunk)
+						hasBuffer() && (yield getBuffer(), await pause)
 						continue
 					}
 					case ASYNC_ITERATOR: {
@@ -399,25 +431,24 @@ export async function* stringify(data, replacer, options) {
 								) {
 									head.type = ASYNC_ENTRIES
 									head.object = {}
-									pushObjectStart() && (yield getBuffer(), await pause)
+									pushObjectStart()
 									continue
 								}
 							}
-							pushArrayStart() && (yield getBuffer(), await pause)
+							pushArrayStart()
 						}
 
 						if (!result.done) {
 							processArrayItem(result.value)
 							break loop
 						}
-						close = pushArrayClose
+						pushArrayClose()
 						break
 					}
 					default: {
 						throw new Error(`unreachable, ${head.type}`)
 					}
 				}
-				close?.() && (yield getBuffer(), await pause)
 				head = stack.pop()
 			}
 		} while (head)
