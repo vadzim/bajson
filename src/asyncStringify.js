@@ -453,7 +453,7 @@ export async function* stringify(data, replacer, options) {
 				await p
 			}
 			run()
-		} while (continuation || head)
+		} while (head)
 	} catch (error) {
 		while (head || stack.length > 0) {
 			try {
