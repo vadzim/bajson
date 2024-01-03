@@ -24,12 +24,14 @@ const formatSize = size => {
 const refStringify = value => {
 	let buffer = ""
 	let result = 0
+	const encoder = new TextEncoder()
 
 	const push = chunk => {
 		buffer += chunk
 		if (buffer.length > 10_000) {
-			result += buffer.length
+			const chunk = encoder.encode(buffer)
 			buffer = ""
+			result += chunk.length
 		}
 	}
 
@@ -94,7 +96,11 @@ await test("performance", async () => {
 			Object.fromEntries(
 				[...new Array(100)].map((_, index) => [
 					"c" + index,
-					[...new Array(100)].map((_, index) => ["b" + index, [Math.random(), Math.random(), Math.random()]]),
+					[...new Array(100)].map((_, index) => [
+						"b" + index,
+						// [Math.random(), Math.random(), Math.random()],
+						{ x: Math.random(), y: Math.random(), z: Math.random() },
+					]),
 				]),
 			),
 		),

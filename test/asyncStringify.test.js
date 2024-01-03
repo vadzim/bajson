@@ -148,11 +148,15 @@ await describe("main", async () => {
 					yield Promise.resolve(88)
 					yield [99]
 				})(),
-				stringify({
-					a: 42,
-					b: 55,
-					c: [89, 34, [{}]],
-				}),
+				stringify(
+					{
+						a: 42,
+						b: 55,
+						c: [89, 34, [{}]],
+					},
+					undefined,
+					{ chunkSize: 2 },
+				),
 				asAsyncObject(
 					(async function* () {
 						yield* [
