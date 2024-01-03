@@ -11,14 +11,15 @@
  */
 export async function* stringify(data, replacer, options) {
 	const {
-		chunkSize = 10_000,
-		ndjson = false,
-		itemPerLine = false,
-		indent = undefined,
+		chunkSize = 10_000, // Default chunk size for each Uint8Array.
+		ndjson = false, // Newline Delimited JSON format flag.
+		itemPerLine = false, // Determines if each item is placed on a new line.
+		indent = undefined, // Specifies the indentation for pretty-printing.
 	} = typeof options === "object" ? options ?? {} : { indent: options }
 
 	const parsedIndent = parseIndent(indent)
 
+	// Ensuring that only one of the formatting options is specified.
 	if ([parsedIndent !== undefined, itemPerLine, ndjson].filter(Boolean).length > 1) {
 		throw new Error("Only one of indent, ndjson or itemPerLine can be specified")
 	}
@@ -74,20 +75,20 @@ export async function* stringify(data, replacer, options) {
 
 	const encoder = new TextEncoder()
 	/**@type StackItem | null*/
-	let head = null
-	let buffer = ""
-	let bufferYielded = false
-	let key = ""
+	let head = null // The current item being processed.
+	let buffer = "" // A string buffer to accumulate the JSON string before converting it to Uint8Array.
+	let bufferYielded = false // A flag indicating if any part of the buffer has been yielded yet.
+	let key = "" // The current key being processed in an object.
 	/**@type TextDecoder*/
 	let decoder
 	/**@type null | Promise<void>*/
-	let continuation = null
+	let continuation = null // Promise to handle asynchronous operations.
 	/**@type Array<StackItem>*/
-	const stack = []
+	const stack = [] // Stack to keep track of nested objects/arrays.
 	/**@type Promise<unknown> | undefined*/
-	let pause = undefined
+	let pause = undefined // Promise to pause the execution to prevent blocking.
 	/**@type Array<string>*/
-	const indentCache = []
+	const indentCache = [] // Cache for indentation strings.
 
 	const replacerFunction = typeof replacer === "function" ? replacer : undefined
 	const propsFilter = Array.isArray(replacer)
@@ -467,10 +468,10 @@ export async function* stringify(data, replacer, options) {
 	}
 	if (ndjson && (bufferYielded || buffer.length > 0)) pushChunk("\n")
 
-	// yield the last chunk if needed
+	// Yield the last chunk if needed.
 	if (buffer.length > 0) yield getBuffer()
 
-	// if no chunks were yielded yield an empty chunk to mark the stream as binary
+	// If no chunks were yielded, yield an empty chunk to mark the stream as binary.
 	if (!bufferYielded) yield getBuffer()
 }
 
