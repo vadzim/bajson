@@ -470,7 +470,7 @@ export async function* stringify(data, replacer, options) {
 	// yield the last chunk if needed
 	if (buffer.length > 0) yield getBuffer()
 
-	// if no chunks were yielded yield an empty chunk to mark our stream as binary
+	// if no chunks were yielded yield an empty chunk to mark the stream as binary
 	if (!bufferYielded) yield getBuffer()
 }
 
