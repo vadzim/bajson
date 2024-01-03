@@ -229,13 +229,13 @@ export async function* stringify(data, replacer, options) {
 				startValue()
 				const json = Number.isFinite(value) ? String(value) : "null"
 				pushChunk(json)
-				break
+				return
 			}
 			case "boolean": {
 				startValue()
 				const json = value ? "true" : "false"
 				pushChunk(json)
-				break
+				return
 			}
 			case "bigint": {
 				// we already called toJSON so we can throw now
@@ -245,44 +245,44 @@ export async function* stringify(data, replacer, options) {
 				startValue()
 				const json = JSON.stringify(value)
 				pushChunk(json)
-				break
+				return
 			}
 			case "object": {
 				if (value === null) {
 					startValue()
 					pushChunk("null")
-					break
+					return
 				}
 				if (Array.isArray(value)) {
 					startValue()
 					newHead(value, ARRAY, value)
 					startArray()
-					break
+					return
 				}
 				const iterator = /**@type Iterable<unknown>*/ (value)[Symbol.iterator]
 				if (typeof iterator === "function") {
 					startValue()
 					newHead([], ITERATOR, iterator.call(value))
 					startArray()
-					break
+					return
 				}
 				const asyncIterator = /**@type AsyncIterable<unknown>*/ (value)[Symbol.asyncIterator]
 				if (typeof asyncIterator === "function") {
 					startValue()
 					newHead([], ASYNC, asyncIterator.call(value))
-					break
+					return
 				}
 				const proto = Object.getPrototypeOf(value)
 				if (proto === objectProto || proto === null) {
 					startValue()
 					newHead(value, ENTRIES, Object.entries(value))
 					startObject()
-					break
+					return
 				}
 				if (value instanceof Number || value instanceof String || value instanceof Boolean) {
 					startValue()
 					pushChunk(JSON.stringify(value.valueOf()))
-					break
+					return
 				}
 				if (value instanceof BigInt) {
 					// we already called toJSON so we can throw now
@@ -291,7 +291,7 @@ export async function* stringify(data, replacer, options) {
 				startValue()
 				newHead(value, ENTRIES, Object.entries(value))
 				startObject()
-				break
+				return
 			}
 			default: {
 				if (head?.type !== ENTRIES && head?.type !== ASYNC_ENTRIES) {
