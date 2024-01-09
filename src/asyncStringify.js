@@ -475,7 +475,7 @@ export async function* stringify(data, replacer, options) {
 	if (!bufferYielded) yield getBuffer()
 }
 
-const getPause = () => new Promise(setImmediate)
+const getPause = () => new Promise(resolve => setImmediate(resolve))
 
 const parseIndent = (/**@type unknown*/ indent) => {
 	if (!indent) return undefined
