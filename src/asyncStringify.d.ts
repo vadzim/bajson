@@ -4,7 +4,7 @@ export declare function stringify(
 	options?:
 		| string
 		| number
-		| { indent?: string | number; chunkSize?: number; itemPerLine: boolean; ndjson: boolean },
+		| { indent?: string | number; chunkSize?: number; itemPerLine?: boolean; ndjson?: boolean },
 ): AsyncIterable<Uint8Array>
 
 export declare function asAsyncBuffer(stream: AsyncIterable<Uint8Array>): AsyncIterable<Uint8Array>
