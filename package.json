@@ -20,8 +20,10 @@
 		"prettier": "^3.1.0"
 	},
 	"exports": {
-		"import": "./index.js",
-		"require": "./index.cjs"
+		"node": {
+			"require": "./index.cjs"
+		},
+		"default": "./index.js"
 	},
 	"license": "MIT",
 	"repository": {
