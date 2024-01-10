@@ -48,5 +48,6 @@
 		"generator",
 		"bfj"
 	],
-	"author": "v@vadzim.info"
+	"author": "v@vadzim.info",
+	"packageManager": "pnpm@latest"
 }
