@@ -1,7 +1,3 @@
-// test import
-import "../index.cjs"
-import "../index.js"
-
 // main test
 import { stringify, asAsyncObject } from "../index.js"
 import assert from "node:assert/strict"
