@@ -92,11 +92,11 @@ const refStringify = value => {
 
 await test("performance", async () => {
 	const [dataDuration, data] = await time(() =>
-		[...new Array(300)].map((_, index) =>
+		[...new Array(300).keys()].map(() =>
 			Object.fromEntries(
-				[...new Array(100)].map((_, index) => [
+				[...new Array(100).keys()].map(index => [
 					"c" + index,
-					[...new Array(100)].map((_, index) => [
+					[...new Array(100).keys()].map(index => [
 						"b" + index,
 						// [Math.random(), Math.random(), Math.random()],
 						{ x: Math.random(), y: Math.random(), z: Math.random() },
